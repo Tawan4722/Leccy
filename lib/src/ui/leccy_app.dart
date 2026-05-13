@@ -9,7 +9,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../domain/models.dart';
@@ -1056,7 +1056,7 @@ class StudySetDetails extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Text(DateFormat.yMMMd().format(set.createdAt)),
+        Text(intl.DateFormat.yMMMd().format(set.createdAt)),
         const SizedBox(height: 12),
         Expanded(
           child: ListView.separated(
@@ -1248,7 +1248,9 @@ class _FileDataWorkspace extends StatefulWidget {
 
 class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
   static final Map<int, List<_DataPoint>> _store = {};
+  static final Map<int, _GraphType> _graphTypeStore = {};
   List<_DataPoint> data = [];
+  _GraphType graphType = _GraphType.bar;
 
   @override
   void initState() {
@@ -1256,6 +1258,7 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
     data = [
       ...(_store[widget.fileId] ?? [const _DataPoint('A', 20)]),
     ];
+    graphType = _graphTypeStore[widget.fileId] ?? _GraphType.bar;
   }
 
   @override
@@ -1265,21 +1268,35 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
       data = [
         ...(_store[widget.fileId] ?? [const _DataPoint('A', 20)]),
       ];
+      graphType = _graphTypeStore[widget.fileId] ?? _GraphType.bar;
     }
   }
 
   void _persist() {
     _store[widget.fileId] = [...data];
+    _graphTypeStore[widget.fileId] = graphType;
   }
 
   @override
   Widget build(BuildContext context) {
+    final cleanData = data.where((point) => point.value > 0).toList();
     final maxY = math
         .max(
           10,
-          data.fold<double>(0, (max, point) => math.max(max, point.value)),
+          cleanData.fold<double>(0, (max, point) => math.max(max, point.value)),
         )
         .toDouble();
+    final total = cleanData.fold<double>(0, (sum, point) => sum + point.value);
+    final avg = cleanData.isEmpty ? 0.0 : (total / cleanData.length).toDouble();
+    final max = cleanData.isEmpty
+        ? 0.0
+        : cleanData.fold<double>(0, (m, point) => math.max(m, point.value));
+    final min = cleanData.isEmpty
+        ? 0.0
+        : cleanData.fold<double>(
+            cleanData.first.value,
+            (m, point) => math.min(m, point.value),
+          );
     return _GlassPanel(
       fastMode: widget.fastMode,
       padding: EdgeInsets.zero,
@@ -1292,7 +1309,7 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
                 Text(
                   widget.mode == EditorSurface.table
                       ? 'Table data'
-                      : 'Graph from table',
+                      : 'Graph from file data',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const Spacer(),
@@ -1307,6 +1324,33 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
                     },
                     icon: const Icon(Icons.add_rounded),
                   ),
+                if (widget.mode == EditorSurface.graph)
+                  SegmentedButton<_GraphType>(
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: const [
+                      ButtonSegment(
+                        value: _GraphType.bar,
+                        icon: Icon(Icons.bar_chart_rounded),
+                      ),
+                      ButtonSegment(
+                        value: _GraphType.line,
+                        icon: Icon(Icons.show_chart_rounded),
+                      ),
+                      ButtonSegment(
+                        value: _GraphType.pie,
+                        icon: Icon(Icons.pie_chart_rounded),
+                      ),
+                    ],
+                    selected: {graphType},
+                    onSelectionChanged: (value) {
+                      setState(() {
+                        graphType = value.first;
+                        _persist();
+                      });
+                    },
+                  ),
               ],
             ),
             const SizedBox(height: 6),
@@ -1314,7 +1358,7 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
               child: widget.mode == EditorSurface.table
                   ? ListView.separated(
                       itemCount: data.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      separatorBuilder: (_, _) => const SizedBox(height: 6),
                       itemBuilder: (context, index) {
                         final point = data[index];
                         return Row(
@@ -1374,14 +1418,36 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
                     )
                   : Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: SizedBox.expand(
-                        child: CustomPaint(
-                          painter: _BarGraphPainter(
-                            points: data,
-                            maxY: maxY,
-                            color: Theme.of(context).colorScheme.primary,
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              _MetricChip(label: 'Total', value: total),
+                              const SizedBox(width: 8),
+                              _MetricChip(label: 'Avg', value: avg),
+                              const SizedBox(width: 8),
+                              _MetricChip(label: 'Max', value: max),
+                              const SizedBox(width: 8),
+                              _MetricChip(label: 'Min', value: min),
+                            ],
                           ),
-                        ),
+                          const SizedBox(height: 10),
+                          Expanded(
+                            child: SizedBox.expand(
+                              child: CustomPaint(
+                                painter: _GraphPainter(
+                                  points: cleanData,
+                                  maxY: maxY,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  type: graphType,
+                                  textColor: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
             ),
@@ -1399,49 +1465,223 @@ class _DataPoint {
   final double value;
 }
 
-class _BarGraphPainter extends CustomPainter {
-  const _BarGraphPainter({
+enum _GraphType { bar, line, pie }
+
+class _GraphPainter extends CustomPainter {
+  const _GraphPainter({
     required this.points,
     required this.maxY,
     required this.color,
+    required this.type,
+    required this.textColor,
   });
 
   final List<_DataPoint> points;
   final double maxY;
   final Color color;
+  final _GraphType type;
+  final Color textColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final axis = Paint()
-      ..color = color.withValues(alpha: 0.28)
-      ..strokeWidth = 1.5;
-    canvas.drawLine(
-      Offset(0, size.height - 16),
-      Offset(size.width, size.height - 16),
-      axis,
-    );
     if (points.isEmpty) {
+      final p = TextPainter(
+        text: TextSpan(
+          text: 'No data yet. Add values in Table mode.',
+          style: TextStyle(
+            color: textColor.withValues(alpha: 0.7),
+            fontSize: 12,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width);
+      p.paint(
+        canvas,
+        Offset((size.width - p.width) / 2, (size.height - p.height) / 2),
+      );
       return;
     }
-    final gap = 10.0;
-    final barWidth = (size.width - gap * (points.length + 1)) / points.length;
-    for (var i = 0; i < points.length; i++) {
-      final h = (points[i].value / maxY) * (size.height - 40);
-      final left = gap + i * (barWidth + gap);
-      final top = size.height - 16 - h;
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, top, barWidth, h),
-        const Radius.circular(12),
+    if (type == _GraphType.pie) {
+      _paintPie(canvas, size);
+      return;
+    }
+    _paintCartesian(canvas, size);
+  }
+
+  void _paintCartesian(Canvas canvas, Size size) {
+    final chartBottom = size.height - 28;
+    final leftPad = 32.0;
+    final rightPad = 8.0;
+    final topPad = 10.0;
+    final chartWidth = size.width - leftPad - rightPad;
+    final chartHeight = chartBottom - topPad;
+    final grid = Paint()
+      ..color = color.withValues(alpha: 0.16)
+      ..strokeWidth = 1;
+    for (var i = 0; i <= 4; i++) {
+      final y = topPad + (chartHeight / 4) * i;
+      canvas.drawLine(
+        Offset(leftPad, y),
+        Offset(leftPad + chartWidth, y),
+        grid,
       );
-      canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.8));
+    }
+    final axis = Paint()
+      ..color = color.withValues(alpha: 0.28)
+      ..strokeWidth = 1.6;
+    canvas.drawLine(
+      Offset(leftPad, chartBottom),
+      Offset(leftPad + chartWidth, chartBottom),
+      axis,
+    );
+    canvas.drawLine(
+      Offset(leftPad, topPad),
+      Offset(leftPad, chartBottom),
+      axis,
+    );
+
+    final gap = 10.0;
+    final barWidth = (chartWidth - gap * (points.length + 1)) / points.length;
+    final path = Path();
+    Offset? previous;
+    for (var i = 0; i < points.length; i++) {
+      final h = (points[i].value / maxY) * (chartHeight - 4);
+      final left = leftPad + gap + i * (barWidth + gap);
+      final top = chartBottom - h;
+      final centerX = left + barWidth / 2;
+
+      if (type == _GraphType.bar) {
+        final rect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(left, top, barWidth, h),
+          const Radius.circular(10),
+        );
+        canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.82));
+      } else {
+        final point = Offset(centerX, top);
+        if (previous == null) {
+          path.moveTo(point.dx, point.dy);
+        } else {
+          path.lineTo(point.dx, point.dy);
+        }
+        previous = point;
+      }
+
+      final labelPainter = TextPainter(
+        text: TextSpan(
+          text: points[i].label,
+          style: TextStyle(
+            color: textColor.withValues(alpha: 0.82),
+            fontSize: 10,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: barWidth + gap);
+      labelPainter.paint(
+        canvas,
+        Offset(centerX - labelPainter.width / 2, chartBottom + 6),
+      );
+    }
+
+    if (type == _GraphType.line) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.6,
+      );
+      for (var i = 0; i < points.length; i++) {
+        final h = (points[i].value / maxY) * (chartHeight - 4);
+        final x = leftPad + gap + i * (barWidth + gap) + barWidth / 2;
+        final y = chartBottom - h;
+        canvas.drawCircle(Offset(x, y), 3.5, Paint()..color = color);
+      }
     }
   }
 
+  void _paintPie(Canvas canvas, Size size) {
+    final total = points.fold<double>(0, (sum, point) => sum + point.value);
+    if (total <= 0) {
+      return;
+    }
+    final center = Offset(size.width * 0.35, size.height * 0.5);
+    final radius = math.min(size.width, size.height) * 0.28;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    var start = -math.pi / 2;
+    for (var i = 0; i < points.length; i++) {
+      final sweep = (points[i].value / total) * math.pi * 2;
+      canvas.drawArc(rect, start, sweep, true, Paint()..color = _palette(i));
+      start += sweep;
+    }
+
+    var legendY = size.height * 0.2;
+    for (var i = 0; i < points.length; i++) {
+      final pct = (points[i].value / total) * 100;
+      final paint = Paint()..color = _palette(i);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(size.width * 0.64, legendY, 10, 10),
+          const Radius.circular(3),
+        ),
+        paint,
+      );
+      final legend = TextPainter(
+        text: TextSpan(
+          text: '${points[i].label}  ${pct.toStringAsFixed(1)}%',
+          style: TextStyle(
+            color: textColor.withValues(alpha: 0.88),
+            fontSize: 11,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: size.width * 0.32);
+      legend.paint(canvas, Offset(size.width * 0.68, legendY - 2));
+      legendY += 16;
+    }
+  }
+
+  Color _palette(int i) {
+    const colors = [
+      Color(0xFF4F87FF),
+      Color(0xFF2DB3A3),
+      Color(0xFFFFA940),
+      Color(0xFFEF6A89),
+      Color(0xFF8B7CFA),
+      Color(0xFF59B76F),
+      Color(0xFFE16666),
+    ];
+    return colors[i % colors.length];
+  }
+
   @override
-  bool shouldRepaint(covariant _BarGraphPainter oldDelegate) {
+  bool shouldRepaint(covariant _GraphPainter oldDelegate) {
     return oldDelegate.points != points ||
         oldDelegate.maxY != maxY ||
-        oldDelegate.color != color;
+        oldDelegate.color != color ||
+        oldDelegate.type != type ||
+        oldDelegate.textColor != textColor;
+  }
+}
+
+class _MetricChip extends StatelessWidget {
+  const _MetricChip({required this.label, required this.value});
+
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$label: ${value.toStringAsFixed(1)}',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    );
   }
 }
 
