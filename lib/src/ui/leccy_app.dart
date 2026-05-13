@@ -712,6 +712,7 @@ class _NoteEditorState extends State<NoteEditor> {
   int? _boundFileId;
   bool _isSaving = false;
   bool _hasPendingChanges = false;
+  EditorSurface _surface = EditorSurface.note;
 
   @override
   void initState() {
@@ -757,6 +758,7 @@ class _NoteEditorState extends State<NoteEditor> {
       (_) => _scheduleSave(),
     );
     _hasPendingChanges = false;
+    _surface = EditorSurface.note;
   }
 
   void _scheduleSave() {
@@ -890,6 +892,30 @@ class _NoteEditorState extends State<NoteEditor> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                SegmentedButton<EditorSurface>(
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  segments: const [
+                    ButtonSegment(
+                      value: EditorSurface.note,
+                      icon: Icon(Icons.notes_rounded),
+                    ),
+                    ButtonSegment(
+                      value: EditorSurface.table,
+                      icon: Icon(Icons.table_chart_rounded),
+                    ),
+                    ButtonSegment(
+                      value: EditorSurface.graph,
+                      icon: Icon(Icons.bar_chart_rounded),
+                    ),
+                  ],
+                  selected: {_surface},
+                  onSelectionChanged: (value) {
+                    setState(() => _surface = value.first);
+                  },
+                ),
+                const SizedBox(width: 8),
                 _SaveState(
                   isSaving: _isSaving,
                   hasPendingChanges: _hasPendingChanges,
@@ -901,35 +927,31 @@ class _NoteEditorState extends State<NoteEditor> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(18),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: quill.QuillEditor.basic(
-                    controller: quillController,
-                    config: const quill.QuillEditorConfig(
-                      placeholder: 'Write the lecture note here...',
-                      padding: EdgeInsets.zero,
+              child: _surface == EditorSurface.note
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: quill.QuillEditor.basic(
+                          controller: quillController,
+                          config: const quill.QuillEditorConfig(
+                            placeholder: 'Write the lecture note here...',
+                            padding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ),
+                    )
+                  : _FileDataWorkspace(
+                      fileId: file.id,
+                      mode: _surface,
+                      fastMode: widget.controller.fastMode,
                     ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SizedBox(
-            height: 250,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-              child: _TableGraphTool(
-                fileId: file.id,
-                fastMode: widget.controller.fastMode,
-              ),
             ),
           ),
         ],
@@ -937,6 +959,8 @@ class _NoteEditorState extends State<NoteEditor> {
     );
   }
 }
+
+enum EditorSurface { note, table, graph }
 
 class ProgressPanel extends StatelessWidget {
   const ProgressPanel({super.key, required this.controller});
@@ -1207,17 +1231,22 @@ class _PaneHandle extends StatelessWidget {
   }
 }
 
-class _TableGraphTool extends StatefulWidget {
-  const _TableGraphTool({required this.fileId, required this.fastMode});
+class _FileDataWorkspace extends StatefulWidget {
+  const _FileDataWorkspace({
+    required this.fileId,
+    required this.fastMode,
+    required this.mode,
+  });
 
   final int fileId;
   final bool fastMode;
+  final EditorSurface mode;
 
   @override
-  State<_TableGraphTool> createState() => _TableGraphToolState();
+  State<_FileDataWorkspace> createState() => _FileDataWorkspaceState();
 }
 
-class _TableGraphToolState extends State<_TableGraphTool> {
+class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
   static final Map<int, List<_DataPoint>> _store = {};
   List<_DataPoint> data = [];
 
@@ -1230,7 +1259,7 @@ class _TableGraphToolState extends State<_TableGraphTool> {
   }
 
   @override
-  void didUpdateWidget(covariant _TableGraphTool oldWidget) {
+  void didUpdateWidget(covariant _FileDataWorkspace oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fileId != widget.fileId) {
       data = [
@@ -1261,28 +1290,29 @@ class _TableGraphToolState extends State<_TableGraphTool> {
             Row(
               children: [
                 Text(
-                  'Table to Graph',
+                  widget.mode == EditorSurface.table
+                      ? 'Table data'
+                      : 'Graph from table',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const Spacer(),
-                IconButton(
-                  tooltip: 'Add row',
-                  onPressed: () {
-                    setState(() {
-                      data.add(_DataPoint('Item ${data.length + 1}', 0));
-                      _persist();
-                    });
-                  },
-                  icon: const Icon(Icons.add_rounded),
-                ),
+                if (widget.mode == EditorSurface.table)
+                  IconButton(
+                    tooltip: 'Add row',
+                    onPressed: () {
+                      setState(() {
+                        data.add(_DataPoint('Item ${data.length + 1}', 0));
+                        _persist();
+                      });
+                    },
+                    icon: const Icon(Icons.add_rounded),
+                  ),
               ],
             ),
             const SizedBox(height: 6),
             Expanded(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ListView.separated(
+              child: widget.mode == EditorSurface.table
+                  ? ListView.separated(
                       itemCount: data.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 6),
                       itemBuilder: (context, index) {
@@ -1308,7 +1338,7 @@ class _TableGraphToolState extends State<_TableGraphTool> {
                             ),
                             const SizedBox(width: 8),
                             SizedBox(
-                              width: 84,
+                              width: 96,
                               child: TextFormField(
                                 initialValue: point.value.toStringAsFixed(0),
                                 keyboardType: TextInputType.number,
@@ -1341,21 +1371,19 @@ class _TableGraphToolState extends State<_TableGraphTool> {
                           ],
                         );
                       },
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: CustomPaint(
-                      painter: _BarGraphPainter(
-                        points: data,
-                        maxY: maxY,
-                        color: Theme.of(context).colorScheme.primary,
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: SizedBox.expand(
+                        child: CustomPaint(
+                          painter: _BarGraphPainter(
+                            points: data,
+                            maxY: maxY,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
                       ),
-                      child: const SizedBox.expand(),
                     ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
