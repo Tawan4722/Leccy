@@ -103,6 +103,9 @@ class LeccyRepository implements LeccyStore {
       quickNote: '',
       progressPercent: 0,
       updatedAt: now,
+      autoSummaryEnabled: false,
+      summarySourceHash: null,
+      summaryUpdatedAt: null,
     );
     final id = await _db.insert('lecture_files', file.toMap());
     return file.copyWith(id: id);

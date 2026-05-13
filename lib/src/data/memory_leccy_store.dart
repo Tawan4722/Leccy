@@ -93,6 +93,9 @@ class MemoryLeccyStore implements LeccyStore {
       quickNote: '',
       progressPercent: 0,
       updatedAt: DateTime.now(),
+      autoSummaryEnabled: false,
+      summarySourceHash: null,
+      summaryUpdatedAt: null,
     );
     _files.add(file);
     return file;

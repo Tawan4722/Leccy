@@ -709,9 +709,11 @@ class _NoteEditorState extends State<NoteEditor> {
   quill.QuillController? _quillController;
   StreamSubscription<dynamic>? _documentSubscription;
   Timer? _saveTimer;
+  Timer? _autoSummaryTimer;
   int? _boundFileId;
   bool _isSaving = false;
   bool _hasPendingChanges = false;
+  bool _isSummarizing = false;
   EditorSurface _surface = EditorSurface.note;
 
   @override
@@ -732,6 +734,7 @@ class _NoteEditorState extends State<NoteEditor> {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    _autoSummaryTimer?.cancel();
     _documentSubscription?.cancel();
     _titleController.dispose();
     _descriptionController.dispose();
@@ -742,6 +745,7 @@ class _NoteEditorState extends State<NoteEditor> {
 
   void _bindFile(LectureFile? file) {
     _saveTimer?.cancel();
+    _autoSummaryTimer?.cancel();
     _documentSubscription?.cancel();
     _boundFileId = file?.id;
     _titleController.text = file?.title ?? '';
@@ -771,6 +775,60 @@ class _NoteEditorState extends State<NoteEditor> {
       Duration(milliseconds: widget.controller.fastMode ? 250 : 700),
       _saveNow,
     );
+    _scheduleAutoSummary();
+  }
+
+  void _scheduleAutoSummary() {
+    _autoSummaryTimer?.cancel();
+    _autoSummaryTimer = Timer(
+      Duration(milliseconds: widget.controller.fastMode ? 1200 : 1800),
+      _runAutoSummary,
+    );
+  }
+
+  String _currentNotePlainText() {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return '';
+    }
+    final contentJson = jsonEncode(quillController.document.toDelta().toJson());
+    return widget.controller.notePlainTextFromContent(contentJson);
+  }
+
+  Future<void> _runAutoSummary() async {
+    final file = widget.controller.selectedFile;
+    if (file == null || !file.autoSummaryEnabled || _isSummarizing) {
+      return;
+    }
+    setState(() => _isSummarizing = true);
+    await widget.controller.maybeAutoSummarizeSelectedFile(
+      noteText: _currentNotePlainText(),
+    );
+    if (mounted) {
+      final updated = widget.controller.selectedFile;
+      if (updated != null && updated.id == _boundFileId) {
+        _descriptionController.text = updated.description;
+      }
+      setState(() => _isSummarizing = false);
+    }
+  }
+
+  Future<void> _generateSummaryNow() async {
+    if (_isSummarizing) {
+      return;
+    }
+    setState(() => _isSummarizing = true);
+    await widget.controller.generateSummaryForSelectedFile(
+      noteText: _currentNotePlainText(),
+      manual: true,
+    );
+    if (mounted) {
+      final updated = widget.controller.selectedFile;
+      if (updated != null && updated.id == _boundFileId) {
+        _descriptionController.text = updated.description;
+      }
+      setState(() => _isSummarizing = false);
+    }
   }
 
   Future<void> _saveNow() async {
@@ -836,13 +894,46 @@ class _NoteEditorState extends State<NoteEditor> {
                       const SizedBox(height: 10),
                       TextField(
                         controller: _descriptionController,
-                        onChanged: (_) => _scheduleSave(),
+                        onChanged: (_) async {
+                          final file = widget.controller.selectedFile;
+                          if (file != null && file.autoSummaryEnabled) {
+                            await widget.controller
+                                .setAutoSummaryEnabledForSelectedFile(false);
+                          }
+                          _scheduleSave();
+                        },
                         minLines: 1,
                         maxLines: 3,
                         decoration: const InputDecoration(
                           labelText: 'File description',
                           prefixIcon: Icon(Icons.subject_rounded),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          FilledButton.tonalIcon(
+                            onPressed: _isSummarizing
+                                ? null
+                                : _generateSummaryNow,
+                            icon: const Icon(Icons.auto_awesome_rounded),
+                            label: Text(
+                              _isSummarizing
+                                  ? 'Summarizing'
+                                  : 'Generate summary',
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text('Auto summary'),
+                          const SizedBox(width: 8),
+                          Switch(
+                            value: file.autoSummaryEnabled,
+                            onChanged: (value) {
+                              widget.controller
+                                  .setAutoSummaryEnabledForSelectedFile(value);
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),

@@ -7,6 +7,7 @@ import '../data/leccy_store.dart';
 import '../data/leccy_store_factory.dart'
     if (dart.library.io) '../data/leccy_store_factory_io.dart';
 import '../domain/models.dart';
+import '../domain/summary_service.dart';
 
 final appControllerProvider = ChangeNotifierProvider<AppController>((ref) {
   final controller = AppController();
@@ -19,9 +20,12 @@ enum FolderSortMode { custom, name, progress }
 enum AppThemeMode { light, dark }
 
 class AppController extends ChangeNotifier {
-  AppController({LeccyStore? repository}) : _repository = repository;
+  AppController({LeccyStore? repository, SummaryService? summaryService})
+    : _repository = repository,
+      _summaryService = summaryService ?? SummaryService();
 
   LeccyStore? _repository;
+  final SummaryService _summaryService;
 
   bool isLoading = true;
   bool isGrid = true;
@@ -293,6 +297,84 @@ class AppController extends ChangeNotifier {
         progressPercent: progressPercent,
       ),
     );
+  }
+
+  Future<void> setAutoSummaryEnabledForSelectedFile(bool enabled) async {
+    final file = selectedFile;
+    if (file == null) {
+      return;
+    }
+    await updateFile(file.copyWith(autoSummaryEnabled: enabled));
+  }
+
+  Future<void> generateSummaryForSelectedFile({
+    required String noteText,
+    bool manual = false,
+  }) async {
+    final file = selectedFile;
+    if (file == null) {
+      return;
+    }
+    final summary = _summaryService.summarize(
+      title: file.title,
+      noteText: noteText,
+      quickNote: file.quickNote,
+    );
+    if (summary.isEmpty && !manual) {
+      return;
+    }
+    final hash = _summaryService.sourceHash(
+      title: file.title,
+      noteText: noteText,
+      quickNote: file.quickNote,
+    );
+    await updateFile(
+      file.copyWith(
+        description: summary,
+        summarySourceHash: hash,
+        summaryUpdatedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  Future<void> maybeAutoSummarizeSelectedFile({
+    required String noteText,
+  }) async {
+    final file = selectedFile;
+    if (file == null || !file.autoSummaryEnabled) {
+      return;
+    }
+    final hash = _summaryService.sourceHash(
+      title: file.title,
+      noteText: noteText,
+      quickNote: file.quickNote,
+    );
+    if (!_summaryService.shouldAutoSummarize(
+      sourceHash: hash,
+      previousHash: file.summarySourceHash,
+      sourceText: noteText,
+    )) {
+      return;
+    }
+    final summary = _summaryService.summarize(
+      title: file.title,
+      noteText: noteText,
+      quickNote: file.quickNote,
+    );
+    if (summary.isEmpty) {
+      return;
+    }
+    await updateFile(
+      file.copyWith(
+        description: summary,
+        summarySourceHash: hash,
+        summaryUpdatedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  String notePlainTextFromContent(String contentJson) {
+    return _summaryService.plainTextFromQuillJson(contentJson);
   }
 
   Future<void> refreshFolderContent({bool keepSelection = false}) async {

@@ -19,9 +19,22 @@ class AppDatabase {
     final db = await dbFactory.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         onCreate: (db, version) async {
           await _createSchema(db);
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await db.execute(
+              "ALTER TABLE lecture_files ADD COLUMN auto_summary_enabled INTEGER NOT NULL DEFAULT 0",
+            );
+            await db.execute(
+              "ALTER TABLE lecture_files ADD COLUMN summary_source_hash TEXT",
+            );
+            await db.execute(
+              "ALTER TABLE lecture_files ADD COLUMN summary_updated_at INTEGER",
+            );
+          }
         },
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
@@ -61,6 +74,9 @@ class AppDatabase {
         quick_note TEXT NOT NULL DEFAULT '',
         progress_percent INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL,
+        auto_summary_enabled INTEGER NOT NULL DEFAULT 0,
+        summary_source_hash TEXT,
+        summary_updated_at INTEGER,
         FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE
       )
     ''');

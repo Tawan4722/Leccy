@@ -71,6 +71,9 @@ class LectureFile {
     required this.quickNote,
     required this.progressPercent,
     required this.updatedAt,
+    required this.autoSummaryEnabled,
+    this.summarySourceHash,
+    this.summaryUpdatedAt,
   });
 
   final int id;
@@ -81,6 +84,9 @@ class LectureFile {
   final String quickNote;
   final int progressPercent;
   final DateTime updatedAt;
+  final bool autoSummaryEnabled;
+  final String? summarySourceHash;
+  final DateTime? summaryUpdatedAt;
 
   static String emptyDocumentJson() {
     return jsonEncode([
@@ -97,6 +103,11 @@ class LectureFile {
     String? quickNote,
     int? progressPercent,
     DateTime? updatedAt,
+    bool? autoSummaryEnabled,
+    String? summarySourceHash,
+    DateTime? summaryUpdatedAt,
+    bool clearSummarySourceHash = false,
+    bool clearSummaryUpdatedAt = false,
   }) {
     return LectureFile(
       id: id ?? this.id,
@@ -107,6 +118,13 @@ class LectureFile {
       quickNote: quickNote ?? this.quickNote,
       progressPercent: progressPercent ?? this.progressPercent,
       updatedAt: updatedAt ?? this.updatedAt,
+      autoSummaryEnabled: autoSummaryEnabled ?? this.autoSummaryEnabled,
+      summarySourceHash: clearSummarySourceHash
+          ? null
+          : summarySourceHash ?? this.summarySourceHash,
+      summaryUpdatedAt: clearSummaryUpdatedAt
+          ? null
+          : summaryUpdatedAt ?? this.summaryUpdatedAt,
     );
   }
 
@@ -120,6 +138,13 @@ class LectureFile {
       quickNote: map['quick_note'] as String,
       progressPercent: map['progress_percent'] as int,
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
+      autoSummaryEnabled: (map['auto_summary_enabled'] as int? ?? 0) == 1,
+      summarySourceHash: map['summary_source_hash'] as String?,
+      summaryUpdatedAt: (map['summary_updated_at'] as int?) == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(
+              map['summary_updated_at'] as int,
+            ),
     );
   }
 
@@ -133,6 +158,9 @@ class LectureFile {
       'quick_note': quickNote,
       'progress_percent': progressPercent.clamp(0, 100),
       'updated_at': updatedAt.millisecondsSinceEpoch,
+      'auto_summary_enabled': autoSummaryEnabled ? 1 : 0,
+      'summary_source_hash': summarySourceHash,
+      'summary_updated_at': summaryUpdatedAt?.millisecondsSinceEpoch,
     };
   }
 }
