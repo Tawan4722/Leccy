@@ -1,9 +1,10 @@
 import 'dart:convert';
 
 class SummaryService {
-  static const int _maxSentences = 3;
+  static const int _maxSentences = 2;
   static const int _minWordsForAuto = 40;
   static const int _minChangeThreshold = 40;
+  static const int _maxPreviewChars = 120;
 
   String sourceHash({
     required String title,
@@ -134,12 +135,11 @@ class SummaryService {
   }
 
   String _truncate(String text) {
-    const maxChars = 260;
     final trimmed = text.trim();
-    if (trimmed.length <= maxChars) {
+    if (trimmed.length <= _maxPreviewChars) {
       return trimmed;
     }
-    return '${trimmed.substring(0, maxChars).trimRight()}...';
+    return '${trimmed.substring(0, _maxPreviewChars).trimRight()}...';
   }
 }
 
