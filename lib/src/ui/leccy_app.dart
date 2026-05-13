@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
@@ -207,6 +208,28 @@ class FolderLibrary extends StatelessWidget {
                   onPressed: () => _showSettingsSheet(context, controller),
                   icon: const Icon(Icons.tune_rounded),
                 ),
+                if (!controller.showLeftPane)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: IconButton.filledTonal(
+                      tooltip: 'Open left panel',
+                      onPressed: () => controller.setLeftPaneVisible(true),
+                      icon: const Icon(
+                        Icons.keyboard_double_arrow_right_rounded,
+                      ),
+                    ),
+                  ),
+                if (!controller.showRightPane)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: IconButton.filledTonal(
+                      tooltip: 'Open right panel',
+                      onPressed: () => controller.setRightPaneVisible(true),
+                      icon: const Icon(
+                        Icons.keyboard_double_arrow_left_rounded,
+                      ),
+                    ),
+                  ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
                   tooltip: 'New folder',
@@ -457,14 +480,39 @@ class LectureWorkspace extends StatelessWidget {
     }
     return Row(
       children: [
-        SizedBox(
-          width: 330,
-          child: FileListPanel(controller: controller, folder: folder),
-        ),
-        const SizedBox(width: 10),
+        if (!controller.showLeftPane && !controller.editorFullscreen)
+          IconButton.filledTonal(
+            tooltip: 'Open left panel',
+            onPressed: () => controller.setLeftPaneVisible(true),
+            icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
+          ),
+        if (controller.showLeftPane && !controller.editorFullscreen)
+          SizedBox(
+            width: controller.leftPaneWidth,
+            child: FileListPanel(controller: controller, folder: folder),
+          ),
+        if (controller.showLeftPane && !controller.editorFullscreen)
+          _PaneHandle(
+            onDrag: controller.resizeLeftPane,
+            tooltip: 'Resize left panel',
+          ),
         Expanded(child: NoteEditor(controller: controller)),
-        const SizedBox(width: 10),
-        SizedBox(width: 300, child: ProgressPanel(controller: controller)),
+        if (controller.showRightPane && !controller.editorFullscreen)
+          _PaneHandle(
+            onDrag: (delta) => controller.resizeRightPane(-delta),
+            tooltip: 'Resize right panel',
+          ),
+        if (controller.showRightPane && !controller.editorFullscreen)
+          SizedBox(
+            width: controller.rightPaneWidth,
+            child: ProgressPanel(controller: controller),
+          ),
+        if (!controller.showRightPane && !controller.editorFullscreen)
+          IconButton.filledTonal(
+            tooltip: 'Open right panel',
+            onPressed: () => controller.setRightPaneVisible(true),
+            icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
+          ),
       ],
     );
   }
@@ -491,7 +539,21 @@ class FileListPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(folder.name, style: Theme.of(context).textTheme.titleLarge),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    folder.name,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close left panel',
+                  onPressed: () => controller.setLeftPaneVisible(false),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
             const SizedBox(height: 6),
             FolderProgressControl(
               progress: controller.selectedFolderProgress,
@@ -819,6 +881,18 @@ class _NoteEditorState extends State<NoteEditor> {
                   ),
                 ),
                 const SizedBox(width: 12),
+                IconButton.filledTonal(
+                  tooltip: widget.controller.editorFullscreen
+                      ? 'Exit fullscreen'
+                      : 'Fullscreen editor',
+                  onPressed: widget.controller.toggleEditorFullscreen,
+                  icon: Icon(
+                    widget.controller.editorFullscreen
+                        ? Icons.fullscreen_exit_rounded
+                        : Icons.fullscreen_rounded,
+                  ),
+                ),
+                const SizedBox(width: 8),
                 _SaveState(
                   isSaving: _isSaving,
                   hasPendingChanges: _hasPendingChanges,
@@ -851,6 +925,16 @@ class _NoteEditorState extends State<NoteEditor> {
               ),
             ),
           ),
+          SizedBox(
+            height: 250,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+              child: _TableGraphTool(
+                fileId: file.id,
+                fastMode: widget.controller.fastMode,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -873,7 +957,21 @@ class ProgressPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Tools', style: Theme.of(context).textTheme.titleLarge),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Tools',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close right panel',
+                  onPressed: () => controller.setRightPaneVisible(false),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             Text('Study sets', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -1076,6 +1174,249 @@ class EmptyState extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _PaneHandle extends StatelessWidget {
+  const _PaneHandle({required this.onDrag, required this.tooltip});
+
+  final ValueChanged<double> onDrag;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
+        child: Container(
+          width: 12,
+          margin: const EdgeInsets.symmetric(vertical: 20),
+          alignment: Alignment.center,
+          child: Container(
+            width: 4,
+            height: 72,
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TableGraphTool extends StatefulWidget {
+  const _TableGraphTool({required this.fileId, required this.fastMode});
+
+  final int fileId;
+  final bool fastMode;
+
+  @override
+  State<_TableGraphTool> createState() => _TableGraphToolState();
+}
+
+class _TableGraphToolState extends State<_TableGraphTool> {
+  static final Map<int, List<_DataPoint>> _store = {};
+  List<_DataPoint> data = [];
+
+  @override
+  void initState() {
+    super.initState();
+    data = [
+      ...(_store[widget.fileId] ?? [const _DataPoint('A', 20)]),
+    ];
+  }
+
+  @override
+  void didUpdateWidget(covariant _TableGraphTool oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fileId != widget.fileId) {
+      data = [
+        ...(_store[widget.fileId] ?? [const _DataPoint('A', 20)]),
+      ];
+    }
+  }
+
+  void _persist() {
+    _store[widget.fileId] = [...data];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxY = math
+        .max(
+          10,
+          data.fold<double>(0, (max, point) => math.max(max, point.value)),
+        )
+        .toDouble();
+    return _GlassPanel(
+      fastMode: widget.fastMode,
+      padding: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Table to Graph',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Add row',
+                  onPressed: () {
+                    setState(() {
+                      data.add(_DataPoint('Item ${data.length + 1}', 0));
+                      _persist();
+                    });
+                  },
+                  icon: const Icon(Icons.add_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: data.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        final point = data[index];
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: point.label,
+                                decoration: const InputDecoration(
+                                  hintText: 'Label',
+                                ),
+                                onChanged: (value) {
+                                  data[index] = _DataPoint(
+                                    value.trim().isEmpty
+                                        ? 'Item'
+                                        : value.trim(),
+                                    point.value,
+                                  );
+                                  _persist();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 84,
+                              child: TextFormField(
+                                initialValue: point.value.toStringAsFixed(0),
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  hintText: 'Value',
+                                ),
+                                onChanged: (value) {
+                                  final parsed = double.tryParse(value) ?? 0;
+                                  data[index] = _DataPoint(
+                                    point.label,
+                                    parsed.clamp(0, 9999),
+                                  );
+                                  _persist();
+                                  setState(() {});
+                                },
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Delete row',
+                              onPressed: data.length == 1
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        data.removeAt(index);
+                                        _persist();
+                                      });
+                                    },
+                              icon: const Icon(Icons.delete_outline_rounded),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: CustomPaint(
+                      painter: _BarGraphPainter(
+                        points: data,
+                        maxY: maxY,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DataPoint {
+  const _DataPoint(this.label, this.value);
+
+  final String label;
+  final double value;
+}
+
+class _BarGraphPainter extends CustomPainter {
+  const _BarGraphPainter({
+    required this.points,
+    required this.maxY,
+    required this.color,
+  });
+
+  final List<_DataPoint> points;
+  final double maxY;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final axis = Paint()
+      ..color = color.withValues(alpha: 0.28)
+      ..strokeWidth = 1.5;
+    canvas.drawLine(
+      Offset(0, size.height - 16),
+      Offset(size.width, size.height - 16),
+      axis,
+    );
+    if (points.isEmpty) {
+      return;
+    }
+    final gap = 10.0;
+    final barWidth = (size.width - gap * (points.length + 1)) / points.length;
+    for (var i = 0; i < points.length; i++) {
+      final h = (points[i].value / maxY) * (size.height - 40);
+      final left = gap + i * (barWidth + gap);
+      final top = size.height - 16 - h;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, top, barWidth, h),
+        const Radius.circular(12),
+      );
+      canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.8));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BarGraphPainter oldDelegate) {
+    return oldDelegate.points != points ||
+        oldDelegate.maxY != maxY ||
+        oldDelegate.color != color;
   }
 }
 

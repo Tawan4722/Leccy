@@ -30,6 +30,12 @@ class AppController extends ChangeNotifier {
   FolderSortMode sortMode = FolderSortMode.custom;
   AppThemeMode themeMode = AppThemeMode.light;
   bool fastMode = true;
+  bool showLeftPane = true;
+  bool showRightPane = true;
+  bool editorFullscreen = false;
+  double leftPaneWidth = 330;
+  double rightPaneWidth = 320;
+  bool? _fastModeBeforeFullscreen;
 
   List<LectureFolder> folders = [];
   List<LectureFile> files = [];
@@ -166,6 +172,43 @@ class AppController extends ChangeNotifier {
 
   void setFastMode(bool value) {
     fastMode = value;
+    notifyListeners();
+  }
+
+  void setLeftPaneVisible(bool value) {
+    showLeftPane = value;
+    notifyListeners();
+  }
+
+  void setRightPaneVisible(bool value) {
+    showRightPane = value;
+    notifyListeners();
+  }
+
+  void resizeLeftPane(double delta) {
+    leftPaneWidth = (leftPaneWidth + delta).clamp(240, 520);
+    notifyListeners();
+  }
+
+  void resizeRightPane(double delta) {
+    rightPaneWidth = (rightPaneWidth + delta).clamp(240, 520);
+    notifyListeners();
+  }
+
+  void toggleEditorFullscreen() {
+    editorFullscreen = !editorFullscreen;
+    if (editorFullscreen) {
+      _fastModeBeforeFullscreen = fastMode;
+      fastMode = true;
+      showLeftPane = false;
+      showRightPane = false;
+    } else {
+      if (_fastModeBeforeFullscreen != null) {
+        fastMode = _fastModeBeforeFullscreen!;
+      }
+      showLeftPane = true;
+      showRightPane = true;
+    }
     notifyListeners();
   }
 
