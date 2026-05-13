@@ -24,19 +24,14 @@ class LeccyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final app = ref.watch(appControllerProvider);
     final isDark = app.themeMode == AppThemeMode.dark;
-    final base = isDark
-        ? const ColorScheme.dark(
-            primary: Color(0xFF8BC7FF),
-            secondary: Color(0xFFB4E7D2),
-            surface: Color(0xFF171A21),
-            onSurface: Color(0xFFE8ECF5),
-          )
-        : const ColorScheme.light(
-            primary: Color(0xFF2457C5),
-            secondary: Color(0xFF0F9D8F),
-            surface: Color(0xFFF4F7FF),
-            onSurface: Color(0xFF111318),
-          );
+    final accent = Color(app.accentColorValue);
+    final base = ColorScheme.fromSeed(
+      seedColor: accent,
+      brightness: isDark ? Brightness.dark : Brightness.light,
+    ).copyWith(
+      surface: isDark ? const Color(0xFF171A21) : const Color(0xFFF4F7FF),
+      onSurface: isDark ? const Color(0xFFE8ECF5) : const Color(0xFF111318),
+    );
 
     return MaterialApp(
       title: 'Leccy',
@@ -48,13 +43,17 @@ class LeccyApp extends ConsumerWidget {
         quill.FlutterQuillLocalizations.delegate,
       ],
       themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
-      theme: _buildTheme(base, false),
-      darkTheme: _buildTheme(base, true),
+      theme: _buildTheme(base, false, app.fontPreset),
+      darkTheme: _buildTheme(base, true, app.fontPreset),
       home: const LeccyHomePage(),
     );
   }
 
-  ThemeData _buildTheme(ColorScheme scheme, bool isDark) {
+  ThemeData _buildTheme(
+    ColorScheme scheme,
+    bool isDark,
+    AppFontPreset fontPreset,
+  ) {
     final baseTextTheme = const TextTheme(
       headlineSmall: TextStyle(fontSize: 25, fontWeight: FontWeight.w600),
       titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
@@ -63,10 +62,11 @@ class LeccyApp extends ConsumerWidget {
       bodyMedium: TextStyle(fontSize: 13),
       bodySmall: TextStyle(fontSize: 12),
     );
+    final textTheme = _textThemeForPreset(fontPreset, baseTextTheme);
     return ThemeData(
       useMaterial3: true,
-      textTheme: GoogleFonts.workSansTextTheme(baseTextTheme),
-      primaryTextTheme: GoogleFonts.workSansTextTheme(baseTextTheme),
+      textTheme: textTheme,
+      primaryTextTheme: textTheme,
       colorScheme: scheme,
       scaffoldBackgroundColor: isDark
           ? const Color(0xFF0D1016)
@@ -124,6 +124,15 @@ class LeccyApp extends ConsumerWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     );
+  }
+
+  TextTheme _textThemeForPreset(AppFontPreset preset, TextTheme base) {
+    return switch (preset) {
+      AppFontPreset.workSans => GoogleFonts.workSansTextTheme(base),
+      AppFontPreset.nunito => GoogleFonts.nunitoSansTextTheme(base),
+      AppFontPreset.sourceSerif => GoogleFonts.sourceSerif4TextTheme(base),
+      AppFontPreset.lato => GoogleFonts.latoTextTheme(base),
+    };
   }
 }
 
@@ -702,10 +711,12 @@ class NoteEditor extends StatefulWidget {
   State<NoteEditor> createState() => _NoteEditorState();
 }
 
-class _NoteEditorState extends State<NoteEditor> {
+class _NoteEditorState extends State<NoteEditor>
+    with WidgetsBindingObserver {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _quickNoteController = TextEditingController();
+  final _searchController = TextEditingController();
   quill.QuillController? _quillController;
   StreamSubscription<dynamic>? _documentSubscription;
   Timer? _saveTimer;
@@ -714,11 +725,27 @@ class _NoteEditorState extends State<NoteEditor> {
   bool _isSaving = false;
   bool _hasPendingChanges = false;
   bool _isSummarizing = false;
+  bool _showOutline = false;
+  bool _showFlashAnswer = false;
+  bool _showFormatToolbar = false;
   EditorSurface _surface = EditorSurface.note;
+  List<int> _searchOffsets = const [];
+  int _activeSearchMatch = 0;
+  int _flashcardIndex = 0;
+  final Set<int> _collapsedSectionOffsets = {};
+  final List<_FlashCardItem> _flashcards = [];
+
+  static const List<Color> _markerColors = [
+    Color(0xFFFFF59D),
+    Color(0xFFC8E6C9),
+    Color(0xFFF8BBD0),
+    Color(0xFFBBDEFB),
+  ];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bindFile(widget.controller.selectedFile);
   }
 
@@ -727,20 +754,32 @@ class _NoteEditorState extends State<NoteEditor> {
     super.didUpdateWidget(oldWidget);
     final file = widget.controller.selectedFile;
     if (file?.id != _boundFileId) {
+      unawaited(_saveNow(silent: true));
       _bindFile(file);
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_saveNow(silent: true));
     _saveTimer?.cancel();
     _autoSummaryTimer?.cancel();
     _documentSubscription?.cancel();
     _titleController.dispose();
     _descriptionController.dispose();
     _quickNoteController.dispose();
+    _searchController.dispose();
     _quillController?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_saveNow(silent: true));
+    }
   }
 
   void _bindFile(LectureFile? file) {
@@ -759,10 +798,24 @@ class _NoteEditorState extends State<NoteEditor> {
       selection: const TextSelection.collapsed(offset: 0),
     );
     _documentSubscription = _quillController!.document.changes.listen(
-      (_) => _scheduleSave(),
+      (_) {
+        _scheduleSave();
+        if (_searchController.text.trim().isNotEmpty) {
+          _refreshSearch();
+        }
+      },
     );
     _hasPendingChanges = false;
     _surface = EditorSurface.note;
+    _showOutline = false;
+    _showFormatToolbar = false;
+    _searchOffsets = const [];
+    _activeSearchMatch = 0;
+    _searchController.clear();
+    _collapsedSectionOffsets.clear();
+    _flashcards.clear();
+    _flashcardIndex = 0;
+    _showFlashAnswer = false;
   }
 
   void _scheduleSave() {
@@ -771,10 +824,7 @@ class _NoteEditorState extends State<NoteEditor> {
     }
     setState(() => _hasPendingChanges = true);
     _saveTimer?.cancel();
-    _saveTimer = Timer(
-      Duration(milliseconds: widget.controller.fastMode ? 250 : 700),
-      _saveNow,
-    );
+    _saveTimer = Timer(const Duration(seconds: 3), _saveNow);
     _scheduleAutoSummary();
   }
 
@@ -793,6 +843,269 @@ class _NoteEditorState extends State<NoteEditor> {
     }
     final contentJson = jsonEncode(quillController.document.toDelta().toJson());
     return widget.controller.notePlainTextFromContent(contentJson);
+  }
+
+  void _applyHighlight(Color color) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final selection = quillController.selection;
+    if (selection.start < 0 || selection.end <= selection.start) {
+      return;
+    }
+    final rgb = color.toARGB32() & 0x00FFFFFF;
+    final hex = '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+    quillController.formatSelection(quill.Attribute.fromKeyValue('background', hex));
+  }
+
+  void _clearHighlight() {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final selection = quillController.selection;
+    if (selection.start < 0 || selection.end <= selection.start) {
+      return;
+    }
+    quillController.formatSelection(
+      quill.Attribute.clone(quill.Attribute.background, null),
+    );
+  }
+
+  void _applyHeading(int? level) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    if (level == null) {
+      quillController.formatSelection(
+        quill.Attribute.clone(quill.Attribute.header, null),
+      );
+      return;
+    }
+    final attribute = switch (level) {
+      1 => quill.Attribute.h1,
+      2 => quill.Attribute.h2,
+      _ => quill.Attribute.h3,
+    };
+    quillController.formatSelection(attribute);
+  }
+
+  void _refreshSearch() {
+    final quillController = _quillController;
+    final query = _searchController.text.trim();
+    if (quillController == null || query.isEmpty) {
+      setState(() {
+        _searchOffsets = const [];
+        _activeSearchMatch = 0;
+      });
+      return;
+    }
+    final offsets = quillController.document.search(query);
+    setState(() {
+      _searchOffsets = offsets;
+      if (_activeSearchMatch >= offsets.length) {
+        _activeSearchMatch = 0;
+      }
+    });
+  }
+
+  void _jumpToSearchMatch(int index) {
+    final quillController = _quillController;
+    final query = _searchController.text.trim();
+    if (quillController == null ||
+        query.isEmpty ||
+        _searchOffsets.isEmpty ||
+        index < 0 ||
+        index >= _searchOffsets.length) {
+      return;
+    }
+    final offset = _searchOffsets[index];
+    quillController.updateSelection(
+      TextSelection(baseOffset: offset, extentOffset: offset + query.length),
+      quill.ChangeSource.local,
+    );
+    setState(() => _activeSearchMatch = index);
+  }
+
+  void _jumpToNextSearchMatch() {
+    if (_searchOffsets.isEmpty) {
+      return;
+    }
+    final next = (_activeSearchMatch + 1) % _searchOffsets.length;
+    _jumpToSearchMatch(next);
+  }
+
+  void _jumpToPreviousSearchMatch() {
+    if (_searchOffsets.isEmpty) {
+      return;
+    }
+    final previous = (_activeSearchMatch - 1 + _searchOffsets.length) %
+        _searchOffsets.length;
+    _jumpToSearchMatch(previous);
+  }
+
+  void _jumpToOffset(int offset) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final safe = offset.clamp(0, quillController.document.length - 1);
+    quillController.updateSelection(
+      TextSelection.collapsed(offset: safe),
+      quill.ChangeSource.local,
+    );
+  }
+
+  List<_OutlineSection> _buildOutlineSections(
+    quill.QuillController quillController,
+  ) {
+    final sections = <_OutlineSection>[];
+    _OutlineSection? current;
+
+    void ensureFallback() {
+      current ??= _OutlineSection(
+        title: 'General notes',
+        level: 0,
+        offset: 0,
+        bodyLines: [],
+      );
+      if (!sections.contains(current)) {
+        sections.add(current!);
+      }
+    }
+
+    void addLine(quill.Line line) {
+      final full = line.toPlainText();
+      final text = full.endsWith('\n') ? full.substring(0, full.length - 1) : full;
+      final trimmed = text.trim();
+      final header = line.style.attributes[quill.Attribute.header.key];
+      final level = header?.value is int ? header!.value as int : 0;
+      if (level > 0 && trimmed.isNotEmpty) {
+        current = _OutlineSection(
+          title: trimmed,
+          level: level,
+          offset: line.documentOffset,
+          bodyLines: [],
+        );
+        sections.add(current!);
+        return;
+      }
+      if (trimmed.isEmpty) {
+        return;
+      }
+      ensureFallback();
+      current!.bodyLines.add(trimmed);
+    }
+
+    void walk(quill.Node node) {
+      if (node is quill.Line) {
+        addLine(node);
+        return;
+      }
+      if (node is quill.Block) {
+        for (final child in node.children.whereType<quill.Node>()) {
+          walk(child);
+        }
+      }
+    }
+
+    for (final node in quillController.document.root.children.whereType<quill.Node>()) {
+      walk(node);
+    }
+    if (sections.isEmpty) {
+      return const [
+        _OutlineSection(
+          title: 'General notes',
+          level: 0,
+          offset: 0,
+          bodyLines: <String>[],
+        ),
+      ];
+    }
+    return sections;
+  }
+
+  void _generateFlashcards() {
+    if (!widget.controller.hasApiKey) {
+      return;
+    }
+    final text = _currentNotePlainText().trim();
+    if (text.isEmpty) {
+      setState(() {
+        _flashcards
+          ..clear()
+          ..add(
+            const _FlashCardItem(
+              question: 'No notes yet',
+              answer: 'Write lecture notes first, then generate flashcards.',
+            ),
+          );
+        _flashcardIndex = 0;
+        _showFlashAnswer = false;
+      });
+      return;
+    }
+
+    final segments = text
+        .split(RegExp(r'[\n\.!?]+'))
+        .map((line) => line.trim())
+        .where((line) => line.length >= 18)
+        .take(20)
+        .toList();
+
+    final cards = <_FlashCardItem>[];
+    for (final segment in segments.take(12)) {
+      final words = segment.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      if (words.length < 3) {
+        continue;
+      }
+      final topic = words.take(6).join(' ');
+      cards.add(
+        _FlashCardItem(
+          question: 'What should you remember about "$topic"...?',
+          answer: segment,
+        ),
+      );
+    }
+
+    if (cards.isEmpty) {
+      cards.add(
+        const _FlashCardItem(
+          question: 'Not enough content',
+          answer: 'Add a bit more detail in your note to build flashcards.',
+        ),
+      );
+    }
+
+    setState(() {
+      _flashcards
+        ..clear()
+        ..addAll(cards);
+      _flashcardIndex = 0;
+      _showFlashAnswer = false;
+    });
+  }
+
+  void _nextFlashcard() {
+    if (_flashcards.isEmpty) {
+      return;
+    }
+    setState(() {
+      _flashcardIndex = (_flashcardIndex + 1) % _flashcards.length;
+      _showFlashAnswer = false;
+    });
+  }
+
+  void _previousFlashcard() {
+    if (_flashcards.isEmpty) {
+      return;
+    }
+    setState(() {
+      _flashcardIndex = (_flashcardIndex - 1 + _flashcards.length) % _flashcards.length;
+      _showFlashAnswer = false;
+    });
   }
 
   Future<void> _runAutoSummary() async {
@@ -831,15 +1144,29 @@ class _NoteEditorState extends State<NoteEditor> {
     }
   }
 
-  Future<void> _saveNow() async {
-    final file = widget.controller.selectedFile;
+  Future<void> _saveNow({bool silent = false}) async {
+    _saveTimer?.cancel();
+    final boundFileId = _boundFileId;
     final quillController = _quillController;
-    if (file == null || quillController == null || file.id != _boundFileId) {
+    if (boundFileId == null || quillController == null) {
       return;
     }
-    setState(() => _isSaving = true);
+
+    final selected = widget.controller.selectedFile;
+    final file = selected?.id == boundFileId
+        ? selected
+        : widget.controller.files
+              .where((entry) => entry.id == boundFileId)
+              .firstOrNull;
+    if (file == null) {
+      return;
+    }
+
+    if (!silent && mounted) {
+      setState(() => _isSaving = true);
+    }
     final contentJson = jsonEncode(quillController.document.toDelta().toJson());
-    await widget.controller.updateFile(
+    await widget.controller.saveFileDraft(
       file.copyWith(
         title: _titleController.text.trim().isEmpty
             ? 'Untitled lecture'
@@ -849,12 +1176,17 @@ class _NoteEditorState extends State<NoteEditor> {
         contentJson: contentJson,
       ),
     );
-    if (mounted) {
+
+    if (!silent && mounted) {
       setState(() {
         _isSaving = false;
         _hasPendingChanges = false;
       });
+      return;
     }
+
+    _isSaving = false;
+    _hasPendingChanges = false;
   }
 
   @override
@@ -875,168 +1207,255 @@ class _NoteEditorState extends State<NoteEditor> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+            child: Column(
               children: [
-                Expanded(
-                  child: Column(
+                TextField(
+                  controller: _titleController,
+                  onChanged: (_) => _scheduleSave(),
+                  style: Theme.of(context).textTheme.titleLarge,
+                  decoration: const InputDecoration(
+                    hintText: 'Untitled lecture',
+                    prefixIcon: Icon(Icons.title_rounded),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
                     children: [
-                      TextField(
-                        controller: _titleController,
-                        onChanged: (_) => _scheduleSave(),
-                        style: Theme.of(context).textTheme.headlineSmall,
-                        decoration: const InputDecoration(
-                          labelText: 'Title',
-                          prefixIcon: Icon(Icons.title_rounded),
-                        ),
+                      _SaveState(
+                        isSaving: _isSaving,
+                        hasPendingChanges: _hasPendingChanges,
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _descriptionController,
-                        onChanged: (_) async {
-                          final file = widget.controller.selectedFile;
-                          if (file != null && file.autoSummaryEnabled) {
-                            await widget.controller
-                                .setAutoSummaryEnabledForSelectedFile(false);
-                          }
-                          _scheduleSave();
-                        },
-                        minLines: 1,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'File description',
-                          prefixIcon: Icon(Icons.subject_rounded),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          FilledButton.tonalIcon(
-                            onPressed: _isSummarizing
-                                ? null
-                                : _generateSummaryNow,
-                            icon: const Icon(Icons.auto_awesome_rounded),
-                            label: Text(
-                              _isSummarizing
-                                  ? 'Summarizing'
-                                  : 'Generate summary',
-                            ),
+                      if (_surface == EditorSurface.note) ...[
+                        const SizedBox(width: 6),
+                        IconButton.filledTonal(
+                          tooltip: _showOutline
+                              ? 'Hide accordion'
+                              : 'Show accordion',
+                          onPressed: () =>
+                              setState(() => _showOutline = !_showOutline),
+                          icon: Icon(
+                            _showOutline
+                                ? Icons.view_agenda_rounded
+                                : Icons.view_agenda_outlined,
                           ),
-                          const SizedBox(width: 10),
-                          const Text('Auto summary'),
-                          const SizedBox(width: 8),
-                          Switch(
-                            value: file.autoSummaryEnabled,
-                            onChanged: (value) {
-                              widget.controller
-                                  .setAutoSummaryEnabledForSelectedFile(value);
-                            },
+                        ),
+                      ],
+                      const SizedBox(width: 6),
+                      IconButton.filledTonal(
+                        tooltip: widget.controller.editorFullscreen
+                            ? 'Exit fullscreen'
+                            : 'Fullscreen editor',
+                        onPressed: widget.controller.toggleEditorFullscreen,
+                        icon: Icon(
+                          widget.controller.editorFullscreen
+                              ? Icons.fullscreen_exit_rounded
+                              : Icons.fullscreen_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SegmentedButton<EditorSurface>(
+                        style: SegmentedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: EditorSurface.note,
+                            icon: Icon(Icons.notes_rounded),
+                          ),
+                          ButtonSegment(
+                            value: EditorSurface.table,
+                            icon: Icon(Icons.table_chart_rounded),
+                          ),
+                          ButtonSegment(
+                            value: EditorSurface.graph,
+                            icon: Icon(Icons.bar_chart_rounded),
+                          ),
+                          ButtonSegment(
+                            value: EditorSurface.flashcards,
+                            icon: Icon(Icons.style_rounded),
                           ),
                         ],
+                        selected: {_surface},
+                        onSelectionChanged: (value) {
+                          setState(() => _surface = value.first);
+                        },
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 220,
-                  child: TextField(
-                    controller: _quickNoteController,
-                    onChanged: (_) => _scheduleSave(),
-                    minLines: 3,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Doing now',
-                      prefixIcon: Icon(Icons.sticky_note_2_outlined),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: Row(
-              children: [
-                Expanded(
-                  child: quill.QuillSimpleToolbar(
-                    controller: quillController,
-                    config: const quill.QuillSimpleToolbarConfig(
-                      showFontFamily: false,
-                      showFontSize: false,
-                      showInlineCode: false,
-                      showCodeBlock: false,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                IconButton.filledTonal(
-                  tooltip: widget.controller.editorFullscreen
-                      ? 'Exit fullscreen'
-                      : 'Fullscreen editor',
-                  onPressed: widget.controller.toggleEditorFullscreen,
-                  icon: Icon(
-                    widget.controller.editorFullscreen
-                        ? Icons.fullscreen_exit_rounded
-                        : Icons.fullscreen_rounded,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SegmentedButton<EditorSurface>(
-                  style: SegmentedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: EditorSurface.note,
-                      icon: Icon(Icons.notes_rounded),
-                    ),
-                    ButtonSegment(
-                      value: EditorSurface.table,
-                      icon: Icon(Icons.table_chart_rounded),
-                    ),
-                    ButtonSegment(
-                      value: EditorSurface.graph,
-                      icon: Icon(Icons.bar_chart_rounded),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(top: 4, bottom: 4),
+                  leading: const Icon(Icons.subject_rounded),
+                  title: const Text('Details'),
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _descriptionController,
+                            onChanged: (_) async {
+                              final file = widget.controller.selectedFile;
+                              if (file != null && file.autoSummaryEnabled) {
+                                await widget.controller
+                                    .setAutoSummaryEnabledForSelectedFile(false);
+                              }
+                              _scheduleSave();
+                            },
+                            minLines: 2,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                              labelText: 'Description',
+                              prefixIcon: Icon(Icons.notes_outlined),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 220,
+                          child: TextField(
+                            controller: _quickNoteController,
+                            onChanged: (_) => _scheduleSave(),
+                            minLines: 2,
+                            maxLines: 3,
+                            decoration: const InputDecoration(
+                              labelText: 'Doing now',
+                              prefixIcon: Icon(Icons.sticky_note_2_outlined),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 190,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              FilledButton.tonalIcon(
+                                onPressed: _isSummarizing
+                                    ? null
+                                    : _generateSummaryNow,
+                                icon:
+                                    const Icon(Icons.auto_awesome_rounded),
+                                label: Text(
+                                  _isSummarizing
+                                      ? 'Summarizing'
+                                      : 'Summary',
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  const Expanded(child: Text('Auto summary')),
+                                  Switch(
+                                    value: file.autoSummaryEnabled,
+                                    onChanged: (value) {
+                                      widget.controller
+                                          .setAutoSummaryEnabledForSelectedFile(
+                                        value,
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                  selected: {_surface},
-                  onSelectionChanged: (value) {
-                    setState(() => _surface = value.first);
-                  },
-                ),
-                const SizedBox(width: 8),
-                _SaveState(
-                  isSaving: _isSaving,
-                  hasPendingChanges: _hasPendingChanges,
                 ),
               ],
             ),
           ),
+          if (_surface == EditorSurface.note)
+            _NoteActionBar(
+              controller: quillController,
+              searchController: _searchController,
+              markerColors: _markerColors,
+              showFormatToolbar: _showFormatToolbar,
+              searchLabel: _searchController.text.trim().isEmpty
+                  ? ''
+                  : '${_searchOffsets.isEmpty ? 0 : _activeSearchMatch + 1}/${_searchOffsets.length}',
+              onHeadingSelected: _applyHeading,
+              onHighlight: _applyHighlight,
+              onClearHighlight: _clearHighlight,
+              onToggleFormatToolbar: () => setState(
+                () => _showFormatToolbar = !_showFormatToolbar,
+              ),
+              onSearchChanged: (_) => _refreshSearch(),
+              onSearchSubmitted: (_) => _jumpToSearchMatch(0),
+              onPreviousSearch: _searchOffsets.isEmpty
+                  ? null
+                  : _jumpToPreviousSearchMatch,
+              onNextSearch: _searchOffsets.isEmpty
+                  ? null
+                  : _jumpToNextSearchMatch,
+            ),
           const Divider(height: 1),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(18),
               child: _surface == EditorSurface.note
-                  ? DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: quill.QuillEditor.basic(
-                          controller: quillController,
-                          config: const quill.QuillEditorConfig(
-                            placeholder: 'Write the lecture note here...',
-                            padding: EdgeInsets.zero,
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(widget.controller.editorPaperColorValue),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.outlineVariant,
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(22),
+                              child: quill.QuillEditor.basic(
+                                controller: quillController,
+                                config: const quill.QuillEditorConfig(
+                                  placeholder: 'Write the lecture note here...',
+                                  padding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        if (_showOutline) const SizedBox(width: 12),
+                        if (_showOutline)
+                          SizedBox(
+                            width: 280,
+                            child: _DocumentOutlinePanel(
+                              sections: _buildOutlineSections(quillController),
+                              collapsedOffsets: _collapsedSectionOffsets,
+                              onToggleSection: (offset, collapsed) {
+                                setState(() {
+                                  if (collapsed) {
+                                    _collapsedSectionOffsets.add(offset);
+                                  } else {
+                                    _collapsedSectionOffsets.remove(offset);
+                                  }
+                                });
+                              },
+                              onJump: _jumpToOffset,
+                            ),
+                          ),
+                      ],
+                    )
+                  : _surface == EditorSurface.flashcards
+                  ? _FlashcardWorkspace(
+                      hasApiKey: widget.controller.hasApiKey,
+                      apiKey: widget.controller.apiKey,
+                      cards: _flashcards,
+                      index: _flashcardIndex,
+                      showAnswer: _showFlashAnswer,
+                      onApiKeyChanged: widget.controller.setApiKey,
+                      onGenerate: _generateFlashcards,
+                      onToggleAnswer: () =>
+                          setState(() => _showFlashAnswer = !_showFlashAnswer),
+                      onPrevious: _previousFlashcard,
+                      onNext: _nextFlashcard,
                     )
                   : _FileDataWorkspace(
                       fileId: file.id,
@@ -1051,7 +1470,412 @@ class _NoteEditorState extends State<NoteEditor> {
   }
 }
 
-enum EditorSurface { note, table, graph }
+class _NoteActionBar extends StatelessWidget {
+  const _NoteActionBar({
+    required this.controller,
+    required this.searchController,
+    required this.markerColors,
+    required this.showFormatToolbar,
+    required this.searchLabel,
+    required this.onHeadingSelected,
+    required this.onHighlight,
+    required this.onClearHighlight,
+    required this.onToggleFormatToolbar,
+    required this.onSearchChanged,
+    required this.onSearchSubmitted,
+    required this.onPreviousSearch,
+    required this.onNextSearch,
+  });
+
+  final quill.QuillController controller;
+  final TextEditingController searchController;
+  final List<Color> markerColors;
+  final bool showFormatToolbar;
+  final String searchLabel;
+  final ValueChanged<int?> onHeadingSelected;
+  final ValueChanged<Color> onHighlight;
+  final VoidCallback onClearHighlight;
+  final VoidCallback onToggleFormatToolbar;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String> onSearchSubmitted;
+  final VoidCallback? onPreviousSearch;
+  final VoidCallback? onNextSearch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.58),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    SegmentedButton<int>(
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: const [
+                      ButtonSegment(value: 1, label: Text('H1')),
+                      ButtonSegment(value: 2, label: Text('H2')),
+                      ButtonSegment(value: 0, label: Text('Body')),
+                    ],
+                    selected: const <int>{},
+                    emptySelectionAllowed: true,
+                    onSelectionChanged: (value) {
+                      if (value.isEmpty) {
+                        return;
+                      }
+                      final picked = value.first;
+                      onHeadingSelected(picked == 0 ? null : picked);
+                    },
+                  ),
+                    const SizedBox(width: 10),
+                    for (var i = 0; i < markerColors.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: IconButton.filledTonal(
+                          tooltip: 'Marker ${i + 1}',
+                          onPressed: () => onHighlight(markerColors[i]),
+                          style: IconButton.styleFrom(
+                            backgroundColor:
+                                markerColors[i].withValues(alpha: 0.55),
+                            minimumSize: const Size(36, 36),
+                          ),
+                          icon: const Icon(Icons.draw_rounded, size: 18),
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: 'Clear marker',
+                      onPressed: onClearHighlight,
+                      icon: const Icon(Icons.format_color_reset_rounded),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: showFormatToolbar
+                          ? 'Hide formatting'
+                          : 'Show formatting',
+                      onPressed: onToggleFormatToolbar,
+                      icon: Icon(
+                        showFormatToolbar
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.tune_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 260,
+                      child: TextField(
+                        controller: searchController,
+                        onChanged: onSearchChanged,
+                        onSubmitted: onSearchSubmitted,
+                        decoration: InputDecoration(
+                          hintText: 'Search',
+                          prefixIcon: const Icon(Icons.search_rounded),
+                          suffixText: searchLabel,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Previous match',
+                      onPressed: onPreviousSearch,
+                      icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                    ),
+                    IconButton(
+                      tooltip: 'Next match',
+                      onPressed: onNextSearch,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              if (showFormatToolbar) ...[
+                const SizedBox(height: 8),
+                quill.QuillSimpleToolbar(
+                  controller: controller,
+                  config: const quill.QuillSimpleToolbarConfig(
+                    showFontFamily: true,
+                    showFontSize: true,
+                    showInlineCode: false,
+                    showCodeBlock: false,
+                    showSearchButton: true,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OutlineSection {
+  const _OutlineSection({
+    required this.title,
+    required this.level,
+    required this.offset,
+    required this.bodyLines,
+  });
+
+  final String title;
+  final int level;
+  final int offset;
+  final List<String> bodyLines;
+}
+
+class _DocumentOutlinePanel extends StatelessWidget {
+  const _DocumentOutlinePanel({
+    required this.sections,
+    required this.collapsedOffsets,
+    required this.onToggleSection,
+    required this.onJump,
+  });
+
+  final List<_OutlineSection> sections;
+  final Set<int> collapsedOffsets;
+  final void Function(int offset, bool collapsed) onToggleSection;
+  final ValueChanged<int> onJump;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: ListView(
+          children: [
+            Text(
+              'Accordion',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            for (final section in sections)
+              Card(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: ExpansionTile(
+                  initiallyExpanded: !collapsedOffsets.contains(section.offset),
+                  onExpansionChanged: (expanded) =>
+                      onToggleSection(section.offset, !expanded),
+                  title: Text(
+                    section.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    section.level == 0
+                        ? 'Text block'
+                        : section.level == 1
+                        ? 'Heading'
+                        : 'Sub heading',
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Jump to section',
+                    onPressed: () => onJump(section.offset),
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                  ),
+                  children: [
+                    if (section.bodyLines.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('No text under this heading yet.'),
+                        ),
+                      ),
+                    if (section.bodyLines.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            section.bodyLines.take(3).join('\n'),
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FlashCardItem {
+  const _FlashCardItem({required this.question, required this.answer});
+
+  final String question;
+  final String answer;
+}
+
+class _FlashcardWorkspace extends StatelessWidget {
+  const _FlashcardWorkspace({
+    required this.hasApiKey,
+    required this.apiKey,
+    required this.cards,
+    required this.index,
+    required this.showAnswer,
+    required this.onApiKeyChanged,
+    required this.onGenerate,
+    required this.onToggleAnswer,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final bool hasApiKey;
+  final String apiKey;
+  final List<_FlashCardItem> cards;
+  final int index;
+  final bool showAnswer;
+  final ValueChanged<String> onApiKeyChanged;
+  final VoidCallback onGenerate;
+  final VoidCallback onToggleAnswer;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.style_rounded),
+                const SizedBox(width: 8),
+                Text('Flashcards', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                if (cards.isNotEmpty)
+                  Chip(
+                    label: Text('${index + 1}/${cards.length}'),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (!hasApiKey) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Flashcards are locked. Enter API key to enable this tab.',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                initialValue: apiKey,
+                obscureText: true,
+                onChanged: onApiKeyChanged,
+                decoration: const InputDecoration(
+                  labelText: 'API key',
+                  prefixIcon: Icon(Icons.key_rounded),
+                ),
+              ),
+              const Spacer(),
+            ] else ...[
+              TextFormField(
+                initialValue: apiKey,
+                obscureText: true,
+                onChanged: onApiKeyChanged,
+                decoration: const InputDecoration(
+                  labelText: 'API key',
+                  prefixIcon: Icon(Icons.key_rounded),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: onGenerate,
+                    icon: const Icon(Icons.auto_awesome_rounded),
+                    label: const Text('Generate cards'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: cards.isEmpty ? null : onPrevious,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: const Text('Previous'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: cards.isEmpty ? null : onNext,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                    label: const Text('Next'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: cards.isEmpty
+                    ? const Center(
+                        child: Text('Generate flashcards from your note content.'),
+                      )
+                    : InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: onToggleAnswer,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            color: Theme.of(context).colorScheme.surfaceContainer,
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                showAnswer ? 'Answer' : 'Question',
+                                style: Theme.of(context).textTheme.labelLarge,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                showAnswer
+                                    ? cards[index].answer
+                                    : cards[index].question,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const Spacer(),
+                              Text(
+                                'Tap card to flip',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum EditorSurface { note, table, graph, flashcards }
 
 class ProgressPanel extends StatelessWidget {
   const ProgressPanel({super.key, required this.controller});
@@ -1910,6 +2734,15 @@ class _GlassPanel extends StatelessWidget {
   }
 }
 
+String _fontPresetLabel(AppFontPreset preset) {
+  return switch (preset) {
+    AppFontPreset.workSans => 'Work Sans',
+    AppFontPreset.nunito => 'Nunito Sans',
+    AppFontPreset.sourceSerif => 'Source Serif 4',
+    AppFontPreset.lato => 'Lato',
+  };
+}
+
 void _showSettingsSheet(BuildContext context, AppController controller) {
   showModalBottomSheet<void>(
     context: context,
@@ -1922,76 +2755,160 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
           fastMode: controller.fastMode,
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.bolt_rounded),
-                    const SizedBox(width: 10),
-                    const Expanded(child: Text('Fast mode')),
-                    Switch(
-                      value: controller.fastMode,
-                      onChanged: controller.setFastMode,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    const Icon(Icons.dark_mode_outlined),
-                    const SizedBox(width: 10),
-                    const Expanded(child: Text('Theme')),
-                    SegmentedButton<AppThemeMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: AppThemeMode.light,
-                          icon: Icon(Icons.light_mode_rounded),
-                        ),
-                        ButtonSegment(
-                          value: AppThemeMode.dark,
-                          icon: Icon(Icons.dark_mode_rounded),
-                        ),
-                      ],
-                      selected: {controller.themeMode},
-                      onSelectionChanged: (value) =>
-                          controller.setThemeMode(value.first),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surface.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
                     children: [
-                      const Icon(Icons.link_rounded),
+                      const Icon(Icons.bolt_rounded),
                       const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text('Want more customization? Go here'),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          final uri = Uri.parse(
-                            'https://github.com/Tawan4722/Leccy',
-                          );
-                          await launchUrl(
-                            uri,
-                            mode: LaunchMode.externalApplication,
-                          );
-                        },
-                        child: const Text('Open'),
+                      const Expanded(child: Text('Fast mode')),
+                      Switch(
+                        value: controller.fastMode,
+                        onChanged: controller.setFastMode,
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.dark_mode_outlined),
+                      const SizedBox(width: 10),
+                      const Expanded(child: Text('Theme')),
+                      SegmentedButton<AppThemeMode>(
+                        segments: const [
+                          ButtonSegment(
+                            value: AppThemeMode.light,
+                            icon: Icon(Icons.light_mode_rounded),
+                          ),
+                          ButtonSegment(
+                            value: AppThemeMode.dark,
+                            icon: Icon(Icons.dark_mode_rounded),
+                          ),
+                        ],
+                        selected: {controller.themeMode},
+                        onSelectionChanged: (value) =>
+                            controller.setThemeMode(value.first),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.font_download_outlined),
+                      const SizedBox(width: 10),
+                      const Expanded(child: Text('App font')),
+                      DropdownButton<AppFontPreset>(
+                        value: controller.fontPreset,
+                        onChanged: (value) {
+                          if (value != null) {
+                            controller.setFontPreset(value);
+                          }
+                        },
+                        items: AppFontPreset.values
+                            .map(
+                              (preset) => DropdownMenuItem(
+                                value: preset,
+                                child: Text(_fontPresetLabel(preset)),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ExpansionTile(
+                    leading: const Icon(Icons.palette_outlined),
+                    title: const Text('Accent color'),
+                    subtitle: Text(
+                      '#${(controller.accentColorValue & 0x00FFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                    ),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        child: _AnyColorPicker(
+                          value: Color(controller.accentColorValue),
+                          onChanged: (color) =>
+                              controller.setAccentColorValue(color.toARGB32()),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ExpansionTile(
+                    leading: const Icon(Icons.note_alt_outlined),
+                    title: const Text('Editor paper color'),
+                    subtitle: Text(
+                      '#${(controller.editorPaperColorValue & 0x00FFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                    ),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        child: _AnyColorPicker(
+                          value: Color(controller.editorPaperColorValue),
+                          onChanged: (color) =>
+                              controller.setEditorPaperColorValue(
+                                color.toARGB32(),
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ExpansionTile(
+                    leading: const Icon(Icons.key_rounded),
+                    title: const Text('API key'),
+                    subtitle: Text(
+                      controller.hasApiKey ? 'Saved in this session' : 'Not set',
+                    ),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        child: TextFormField(
+                          initialValue: controller.apiKey,
+                          obscureText: true,
+                          onChanged: controller.setApiKey,
+                          decoration: const InputDecoration(
+                            labelText: 'Enter API key',
+                            prefixIcon: Icon(Icons.vpn_key_outlined),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.link_rounded),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text('Want more customization? Go here'),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            final uri = Uri.parse(
+                              'https://github.com/Tawan4722/Leccy',
+                            );
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          },
+                          child: const Text('Open'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

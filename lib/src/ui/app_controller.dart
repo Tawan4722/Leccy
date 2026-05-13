@@ -18,6 +18,7 @@ final appControllerProvider = ChangeNotifierProvider<AppController>((ref) {
 enum FolderSortMode { custom, name, progress }
 
 enum AppThemeMode { light, dark }
+enum AppFontPreset { workSans, nunito, sourceSerif, lato }
 
 class AppController extends ChangeNotifier {
   AppController({LeccyStore? repository, SummaryService? summaryService})
@@ -33,7 +34,11 @@ class AppController extends ChangeNotifier {
   String? errorMessage;
   FolderSortMode sortMode = FolderSortMode.custom;
   AppThemeMode themeMode = AppThemeMode.light;
+  AppFontPreset fontPreset = AppFontPreset.workSans;
   bool fastMode = true;
+  int accentColorValue = const Color(0xFF2457C5).toARGB32();
+  int editorPaperColorValue = const Color(0xFFFFFFFF).toARGB32();
+  String apiKey = '';
   bool showLeftPane = true;
   bool showRightPane = true;
   bool editorFullscreen = false;
@@ -179,6 +184,28 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setFontPreset(AppFontPreset value) {
+    fontPreset = value;
+    notifyListeners();
+  }
+
+  void setAccentColorValue(int value) {
+    accentColorValue = value;
+    notifyListeners();
+  }
+
+  void setEditorPaperColorValue(int value) {
+    editorPaperColorValue = value;
+    notifyListeners();
+  }
+
+  bool get hasApiKey => apiKey.trim().isNotEmpty;
+
+  void setApiKey(String value) {
+    apiKey = value.trim();
+    notifyListeners();
+  }
+
   void setLeftPaneVisible(bool value) {
     showLeftPane = value;
     notifyListeners();
@@ -275,6 +302,20 @@ class AppController extends ChangeNotifier {
   Future<void> updateFile(LectureFile file) async {
     await repository.updateFile(file);
     await refreshFolderContent(keepSelection: true);
+  }
+
+  Future<void> saveFileDraft(LectureFile file) async {
+    await repository.updateFile(file);
+
+    final now = DateTime.now();
+    final updated = file.copyWith(updatedAt: now);
+    final index = files.indexWhere((item) => item.id == file.id);
+    if (index != -1) {
+      files[index] = updated;
+      files.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    }
+
+    notifyListeners();
   }
 
   Future<void> updateSelectedFile({
