@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -54,27 +55,22 @@ class LeccyApp extends ConsumerWidget {
   }
 
   ThemeData _buildTheme(ColorScheme scheme, bool isDark) {
+    final baseTextTheme = const TextTheme(
+      headlineSmall: TextStyle(fontSize: 25, fontWeight: FontWeight.w600),
+      titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+      titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      titleSmall: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      bodyMedium: TextStyle(fontSize: 13),
+      bodySmall: TextStyle(fontSize: 12),
+    );
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'Montserrat',
-      fontFamilyFallback: const [
-        'Aptos',
-        'Segoe UI',
-        'Helvetica Neue',
-        'Arial',
-      ],
+      textTheme: GoogleFonts.workSansTextTheme(baseTextTheme),
+      primaryTextTheme: GoogleFonts.workSansTextTheme(baseTextTheme),
       colorScheme: scheme,
       scaffoldBackgroundColor: isDark
           ? const Color(0xFF0D1016)
           : const Color(0xFFECEFF8),
-      textTheme: const TextTheme(
-        headlineSmall: TextStyle(fontSize: 25, fontWeight: FontWeight.w600),
-        titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-        titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        titleSmall: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        bodyMedium: TextStyle(fontSize: 13),
-        bodySmall: TextStyle(fontSize: 12),
-      ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(20)),
