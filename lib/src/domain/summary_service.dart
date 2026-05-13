@@ -139,7 +139,19 @@ class SummaryService {
     if (trimmed.length <= _maxPreviewChars) {
       return trimmed;
     }
-    return '${trimmed.substring(0, _maxPreviewChars).trimRight()}...';
+    final head = trimmed.substring(0, _maxPreviewChars);
+    final period = head.lastIndexOf('.');
+    final exclamation = head.lastIndexOf('!');
+    final question = head.lastIndexOf('?');
+    final stop = [
+      period,
+      exclamation,
+      question,
+    ].reduce((a, b) => a > b ? a : b);
+    if (stop > 0) {
+      return head.substring(0, stop + 1).trimRight();
+    }
+    return head.trimRight();
   }
 }
 
