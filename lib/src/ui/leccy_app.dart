@@ -9,6 +9,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../domain/models.dart';
 import 'app_controller.dart';
@@ -1602,6 +1603,38 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                           controller.setThemeMode(value.first),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surface.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.link_rounded),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text('Want more customization? Go here'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          final uri = Uri.parse(
+                            'https://github.com/Tawan4722/Leccy',
+                          );
+                          await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        },
+                        child: const Text('Open'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
