@@ -1,0 +1,206 @@
+import 'dart:convert';
+
+class LectureFolder {
+  const LectureFolder({
+    required this.id,
+    required this.name,
+    required this.colorValue,
+    required this.badge,
+    required this.sortOrder,
+    this.coverImagePath,
+  });
+
+  final int id;
+  final String name;
+  final int colorValue;
+  final String badge;
+  final String? coverImagePath;
+  final int sortOrder;
+
+  LectureFolder copyWith({
+    int? id,
+    String? name,
+    int? colorValue,
+    String? badge,
+    String? coverImagePath,
+    bool clearCoverImagePath = false,
+    int? sortOrder,
+  }) {
+    return LectureFolder(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      colorValue: colorValue ?? this.colorValue,
+      badge: badge ?? this.badge,
+      coverImagePath: clearCoverImagePath
+          ? null
+          : coverImagePath ?? this.coverImagePath,
+      sortOrder: sortOrder ?? this.sortOrder,
+    );
+  }
+
+  factory LectureFolder.fromMap(Map<String, Object?> map) {
+    return LectureFolder(
+      id: map['id'] as int,
+      name: map['name'] as String,
+      colorValue: map['color_value'] as int,
+      badge: map['badge'] as String,
+      coverImagePath: map['cover_image_path'] as String?,
+      sortOrder: map['sort_order'] as int,
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id == 0 ? null : id,
+      'name': name,
+      'color_value': colorValue,
+      'badge': badge,
+      'cover_image_path': coverImagePath,
+      'sort_order': sortOrder,
+    };
+  }
+}
+
+class LectureFile {
+  LectureFile({
+    required this.id,
+    required this.folderId,
+    required this.title,
+    required this.description,
+    required this.contentJson,
+    required this.quickNote,
+    required this.progressPercent,
+    required this.updatedAt,
+  });
+
+  final int id;
+  final int folderId;
+  final String title;
+  final String description;
+  final String contentJson;
+  final String quickNote;
+  final int progressPercent;
+  final DateTime updatedAt;
+
+  static String emptyDocumentJson() {
+    return jsonEncode([
+      {'insert': '\n'},
+    ]);
+  }
+
+  LectureFile copyWith({
+    int? id,
+    int? folderId,
+    String? title,
+    String? description,
+    String? contentJson,
+    String? quickNote,
+    int? progressPercent,
+    DateTime? updatedAt,
+  }) {
+    return LectureFile(
+      id: id ?? this.id,
+      folderId: folderId ?? this.folderId,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      contentJson: contentJson ?? this.contentJson,
+      quickNote: quickNote ?? this.quickNote,
+      progressPercent: progressPercent ?? this.progressPercent,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  factory LectureFile.fromMap(Map<String, Object?> map) {
+    return LectureFile(
+      id: map['id'] as int,
+      folderId: map['folder_id'] as int,
+      title: map['title'] as String,
+      description: map['description'] as String,
+      contentJson: map['content_json'] as String,
+      quickNote: map['quick_note'] as String,
+      progressPercent: map['progress_percent'] as int,
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id == 0 ? null : id,
+      'folder_id': folderId,
+      'title': title,
+      'description': description,
+      'content_json': contentJson,
+      'quick_note': quickNote,
+      'progress_percent': progressPercent.clamp(0, 100),
+      'updated_at': updatedAt.millisecondsSinceEpoch,
+    };
+  }
+}
+
+class StudySet {
+  const StudySet({
+    required this.id,
+    required this.folderId,
+    required this.name,
+    required this.createdAt,
+  });
+
+  final int id;
+  final int folderId;
+  final String name;
+  final DateTime createdAt;
+
+  factory StudySet.fromMap(Map<String, Object?> map) {
+    return StudySet(
+      id: map['id'] as int,
+      folderId: map['folder_id'] as int,
+      name: map['name'] as String,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id == 0 ? null : id,
+      'folder_id': folderId,
+      'name': name,
+      'created_at': createdAt.millisecondsSinceEpoch,
+    };
+  }
+}
+
+class StudySetItem {
+  const StudySetItem({
+    required this.id,
+    required this.studySetId,
+    required this.fileId,
+    required this.itemOrder,
+    required this.markerPercent,
+  });
+
+  final int id;
+  final int studySetId;
+  final int fileId;
+  final int itemOrder;
+  final int markerPercent;
+
+  factory StudySetItem.fromMap(Map<String, Object?> map) {
+    return StudySetItem(
+      id: map['id'] as int,
+      studySetId: map['study_set_id'] as int,
+      fileId: map['file_id'] as int,
+      itemOrder: map['item_order'] as int,
+      markerPercent: map['marker_percent'] as int,
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id == 0 ? null : id,
+      'study_set_id': studySetId,
+      'file_id': fileId,
+      'item_order': itemOrder,
+      'marker_percent': markerPercent.clamp(0, 100),
+    };
+  }
+}
