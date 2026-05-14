@@ -73,4 +73,37 @@ void main() {
     expect(second.summaryUpdatedAt, firstUpdatedAt);
     expect(second.summarySourceHash, first.summarySourceHash);
   });
+
+  test(
+    'silent draft save updates selected file without notifying listeners',
+    () async {
+      final controller = AppController(repository: MemoryLeccyStore());
+      await controller.load();
+      await controller.createFolder(
+        name: 'English',
+        colorValue: 0xFF2457C5,
+        badge: 'EN',
+      );
+      await controller.createFile();
+
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      final file = controller.selectedFile!;
+
+      await controller.saveFileDraft(
+        file.copyWith(
+          title: 'Long note',
+          contentJson:
+              '[{"insert":"This can keep typing for a long time.\\n"}]',
+        ),
+        notify: false,
+      );
+
+      expect(controller.selectedFile!.title, 'Long note');
+      expect(controller.selectedFile!.contentJson, contains('keep typing'));
+      expect(notifications, 0);
+
+      controller.dispose();
+    },
+  );
 }

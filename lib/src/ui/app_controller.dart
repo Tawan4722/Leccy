@@ -18,6 +18,7 @@ final appControllerProvider = ChangeNotifierProvider<AppController>((ref) {
 enum FolderSortMode { custom, name, progress }
 
 enum AppThemeMode { light, dark }
+
 enum AppFontPreset { workSans, nunito, sourceSerif, lato }
 
 class AppController extends ChangeNotifier {
@@ -304,7 +305,7 @@ class AppController extends ChangeNotifier {
     await refreshFolderContent(keepSelection: true);
   }
 
-  Future<void> saveFileDraft(LectureFile file) async {
+  Future<void> saveFileDraft(LectureFile file, {bool notify = true}) async {
     await repository.updateFile(file);
 
     final now = DateTime.now();
@@ -315,7 +316,9 @@ class AppController extends ChangeNotifier {
       files.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     }
 
-    notifyListeners();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   Future<void> updateSelectedFile({

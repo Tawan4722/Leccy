@@ -17,6 +17,166 @@ import 'app_controller.dart';
 import 'cover_image_provider.dart'
     if (dart.library.io) 'cover_image_provider_io.dart';
 
+const String leccyFoldHiddenAttributeKey = 'leccy-fold-hidden';
+const String _foldHeadingLevelAttributeKey = 'leccy-fold-heading-level';
+const String _quillListAttributeKey = 'list';
+const String _foldLeadingListValue = 'leccy-fold-leading';
+const quill.Attribute<bool> _foldHiddenAttribute = quill.Attribute<bool>(
+  leccyFoldHiddenAttributeKey,
+  quill.AttributeScope.block,
+  true,
+);
+const quill.Attribute<String> _foldLeadingAttribute = quill.Attribute<String>(
+  _quillListAttributeKey,
+  quill.AttributeScope.block,
+  _foldLeadingListValue,
+);
+quill.Attribute<int> _foldHeadingLevelAttribute(int level) =>
+    quill.Attribute<int>(
+      _foldHeadingLevelAttributeKey,
+      quill.AttributeScope.block,
+      level,
+    );
+const quill.Attribute<Object?> _clearFoldHiddenAttribute =
+    quill.Attribute<Object?>(
+      leccyFoldHiddenAttributeKey,
+      quill.AttributeScope.block,
+      null,
+    );
+const quill.Attribute<Object?> _clearFoldLeadingAttribute =
+    quill.Attribute<Object?>(
+      _quillListAttributeKey,
+      quill.AttributeScope.block,
+      null,
+    );
+const quill.Attribute<Object?> _clearFoldHeadingLevelAttribute =
+    quill.Attribute<Object?>(
+      _foldHeadingLevelAttributeKey,
+      quill.AttributeScope.block,
+      null,
+    );
+
+class LeccyHeadingFoldRange {
+  const LeccyHeadingFoldRange({
+    required this.headingOffset,
+    required this.headingLevel,
+    required this.childLineOffsets,
+  });
+
+  final int headingOffset;
+  final int headingLevel;
+  final List<int> childLineOffsets;
+
+  bool get canFold => childLineOffsets.isNotEmpty;
+}
+
+List<LeccyHeadingFoldRange> computeLeccyHeadingFoldRanges(
+  quill.Document document,
+) {
+  final lines = _documentLines(document);
+  final ranges = <LeccyHeadingFoldRange>[];
+  for (var index = 0; index < lines.length; index++) {
+    final line = lines[index];
+    final level = _headingLevelForLine(line);
+    if (level == null) {
+      continue;
+    }
+    final childOffsets = <int>[];
+    for (var childIndex = index + 1; childIndex < lines.length; childIndex++) {
+      final childLine = lines[childIndex];
+      final childLevel = _headingLevelForLine(childLine);
+      if (childLevel != null && childLevel <= level) {
+        break;
+      }
+      childOffsets.add(childLine.documentOffset);
+    }
+    ranges.add(
+      LeccyHeadingFoldRange(
+        headingOffset: line.documentOffset,
+        headingLevel: level,
+        childLineOffsets: childOffsets,
+      ),
+    );
+  }
+  return ranges;
+}
+
+List<quill.Line> _documentLines(quill.Document document) {
+  final lines = <quill.Line>[];
+
+  void walk(quill.Node node) {
+    if (node is quill.Line) {
+      lines.add(node);
+      return;
+    }
+    if (node is quill.Block) {
+      for (final child in node.children.whereType<quill.Node>()) {
+        walk(child);
+      }
+    }
+  }
+
+  for (final node in document.root.children.whereType<quill.Node>()) {
+    walk(node);
+  }
+  return lines;
+}
+
+int? _headingLevelForLine(quill.Line line) {
+  final header = line.style.attributes[quill.Attribute.header.key];
+  final value = header?.value;
+  if (value is int) {
+    return value;
+  }
+  final temporaryHeader =
+      line.style.attributes[_foldHeadingLevelAttributeKey]?.value;
+  return temporaryHeader is int ? temporaryHeader : null;
+}
+
+dynamic _stripFoldHiddenFromDeltaJson(dynamic json) {
+  if (json is List) {
+    return json.map<dynamic>(_stripFoldHiddenFromDeltaJson).toList();
+  }
+  if (json is Map) {
+    final cleaned = Map<String, Object?>.from(json);
+    final attributes = cleaned['attributes'];
+    if (attributes is Map) {
+      final cleanedAttributes = Map<String, Object?>.from(attributes);
+      final temporaryHeadingLevel =
+          cleanedAttributes[_foldHeadingLevelAttributeKey];
+      if (temporaryHeadingLevel is int) {
+        cleanedAttributes[quill.Attribute.header.key] = temporaryHeadingLevel;
+      }
+      cleanedAttributes.remove(leccyFoldHiddenAttributeKey);
+      cleanedAttributes.remove(_foldHeadingLevelAttributeKey);
+      if (cleanedAttributes[quill.Attribute.list.key] ==
+          _foldLeadingListValue) {
+        cleanedAttributes.remove(quill.Attribute.list.key);
+      }
+      if (cleanedAttributes.isEmpty) {
+        cleaned.remove('attributes');
+      } else {
+        cleaned['attributes'] = cleanedAttributes;
+      }
+    }
+    return cleaned;
+  }
+  return json;
+}
+
+String stripLeccyFoldHiddenFromContentJson(String contentJson) {
+  return jsonEncode(_stripFoldHiddenFromDeltaJson(jsonDecode(contentJson)));
+}
+
+String _fontPresetLabel(AppFontPreset preset) {
+  return switch (preset) {
+    AppFontPreset.workSans => 'Work Sans',
+    AppFontPreset.nunito => 'Nunito Sans',
+    AppFontPreset.sourceSerif => 'Source Serif 4',
+    AppFontPreset.lato => 'Lato',
+  };
+}
+
 class LeccyApp extends ConsumerWidget {
   const LeccyApp({super.key});
 
@@ -25,13 +185,14 @@ class LeccyApp extends ConsumerWidget {
     final app = ref.watch(appControllerProvider);
     final isDark = app.themeMode == AppThemeMode.dark;
     final accent = Color(app.accentColorValue);
-    final base = ColorScheme.fromSeed(
-      seedColor: accent,
-      brightness: isDark ? Brightness.dark : Brightness.light,
-    ).copyWith(
-      surface: isDark ? const Color(0xFF171A21) : const Color(0xFFF4F7FF),
-      onSurface: isDark ? const Color(0xFFE8ECF5) : const Color(0xFF111318),
-    );
+    final base =
+        ColorScheme.fromSeed(
+          seedColor: accent,
+          brightness: isDark ? Brightness.dark : Brightness.light,
+        ).copyWith(
+          surface: isDark ? const Color(0xFF171A21) : const Color(0xFFF4F7FF),
+          onSurface: isDark ? const Color(0xFFE8ECF5) : const Color(0xFF111318),
+        );
 
     return MaterialApp(
       title: 'Leccy',
@@ -73,55 +234,55 @@ class LeccyApp extends ConsumerWidget {
           : const Color(0xFFECEFF8),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: const BorderRadius.all(Radius.circular(20)),
+          borderRadius: const BorderRadius.all(Radius.circular(32)),
           borderSide: BorderSide(
-            color: isDark ? const Color(0x66FFFFFF) : const Color(0x55333B4F),
+            color: isDark ? const Color(0x33FFFFFF) : const Color(0x33333B4F),
           ),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: const BorderRadius.all(Radius.circular(20)),
+          borderRadius: const BorderRadius.all(Radius.circular(32)),
           borderSide: BorderSide(
-            color: isDark ? const Color(0x44FFFFFF) : const Color(0x33333B4F),
+            color: isDark ? const Color(0x22FFFFFF) : const Color(0x22333B4F),
           ),
         ),
         filled: true,
-        fillColor: isDark ? const Color(0x22FFFFFF) : const Color(0xAAFFFFFF),
+        fillColor: isDark ? const Color(0x11FFFFFF) : const Color(0x88FFFFFF),
         isDense: true,
       ),
       cardTheme: const CardThemeData(
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(20)),
+          borderRadius: BorderRadius.all(Radius.circular(32)),
         ),
       ),
       chipTheme: ChipThemeData(
         side: BorderSide.none,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(32),
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(32),
           ),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(32),
           ),
         ),
       ),
       dialogTheme: DialogThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
       ),
     );
   }
@@ -185,7 +346,7 @@ class FolderLibrary extends StatelessWidget {
       fastMode: controller.fastMode,
       padding: const EdgeInsets.all(16),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -196,14 +357,18 @@ class FolderLibrary extends StatelessWidget {
                   children: [
                     Text(
                       'Leccy',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.headlineSmall?.copyWith(letterSpacing: 0),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            letterSpacing: -0.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     Text(
-                      'Lecture workspace',
+                      'Workspace',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -211,92 +376,61 @@ class FolderLibrary extends StatelessWidget {
                 const Spacer(),
                 IconButton.filledTonal(
                   tooltip: 'Settings',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHigh,
+                  ),
                   onPressed: () => _showSettingsSheet(context, controller),
                   icon: const Icon(Icons.tune_rounded),
                 ),
-                if (!controller.showLeftPane)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: IconButton.filledTonal(
-                      tooltip: 'Open left panel',
-                      onPressed: () => controller.setLeftPaneVisible(true),
-                      icon: const Icon(
-                        Icons.keyboard_double_arrow_right_rounded,
-                      ),
-                    ),
-                  ),
-                if (!controller.showRightPane)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: IconButton.filledTonal(
-                      tooltip: 'Open right panel',
-                      onPressed: () => controller.setRightPaneVisible(true),
-                      icon: const Icon(
-                        Icons.keyboard_double_arrow_left_rounded,
-                      ),
-                    ),
-                  ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
                   tooltip: 'New folder',
-                  onPressed: () => _showFolderDialog(context, controller),
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            TextField(
-              onChanged: controller.setSearchQuery,
-              decoration: const InputDecoration(
-                hintText: 'Search folders',
-                prefixIcon: Icon(Icons.search),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                SegmentedButton<bool>(
-                  style: SegmentedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primaryContainer,
                   ),
-                  segments: const [
-                    ButtonSegment(
-                      value: true,
-                      icon: Icon(Icons.grid_view_rounded),
-                    ),
-                    ButtonSegment(
-                      value: false,
-                      icon: Icon(Icons.view_list_rounded),
-                    ),
-                  ],
-                  selected: {controller.isGrid},
-                  onSelectionChanged: (value) =>
-                      controller.setGrid(value.first),
-                ),
-                PopupMenuButton<FolderSortMode>(
-                  tooltip: 'Sort folders',
-                  initialValue: controller.sortMode,
-                  onSelected: controller.setSortMode,
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: FolderSortMode.custom,
-                      child: Text('Custom order'),
-                    ),
-                    PopupMenuItem(
-                      value: FolderSortMode.name,
-                      child: Text('Name'),
-                    ),
-                    PopupMenuItem(
-                      value: FolderSortMode.progress,
-                      child: Text('Progress'),
-                    ),
-                  ],
-                  icon: const Icon(Icons.sort_rounded),
+                  onPressed: () => _showFolderDialog(context, controller),
+                  icon: const Icon(Icons.add_rounded),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    onChanged: controller.setSearchQuery,
+                    decoration: InputDecoration(
+                      hintText: 'Search...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                      filled: true,
+                      fillColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.5),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 0,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(32),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                IconButton.filledTonal(
+                  tooltip: 'Sort/View',
+                  onPressed: () => _showViewOptions(context, controller),
+                  icon: const Icon(Icons.filter_list_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
             Expanded(
               child: folders.isEmpty
                   ? EmptyState(
@@ -310,9 +444,9 @@ class FolderLibrary extends StatelessWidget {
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 2,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            childAspectRatio: 0.95,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: 0.85,
                           ),
                       itemCount: folders.length,
                       itemBuilder: (context, index) => FolderTile(
@@ -334,7 +468,7 @@ class FolderLibrary extends StatelessWidget {
                   : ListView.separated(
                       itemCount: folders.length,
                       separatorBuilder: (context, index) =>
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 12),
                       itemBuilder: (context, index) => FolderTile(
                         folder: folders[index],
                         isSelected:
@@ -711,8 +845,7 @@ class NoteEditor extends StatefulWidget {
   State<NoteEditor> createState() => _NoteEditorState();
 }
 
-class _NoteEditorState extends State<NoteEditor>
-    with WidgetsBindingObserver {
+class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _quickNoteController = TextEditingController();
@@ -721,9 +854,10 @@ class _NoteEditorState extends State<NoteEditor>
   StreamSubscription<dynamic>? _documentSubscription;
   Timer? _saveTimer;
   Timer? _autoSummaryTimer;
+  Timer? _foldVisibilityTimer;
   int? _boundFileId;
-  bool _isSaving = false;
-  bool _hasPendingChanges = false;
+  final ValueNotifier<bool> _isSaving = ValueNotifier(false);
+  final ValueNotifier<bool> _hasPendingChanges = ValueNotifier(false);
   bool _isSummarizing = false;
   bool _showOutline = false;
   bool _showFlashAnswer = false;
@@ -734,6 +868,7 @@ class _NoteEditorState extends State<NoteEditor>
   int _flashcardIndex = 0;
   final Set<int> _collapsedSectionOffsets = {};
   final List<_FlashCardItem> _flashcards = [];
+  bool _isApplyingFoldVisibility = false;
 
   static const List<Color> _markerColors = [
     Color(0xFFFFF59D),
@@ -765,12 +900,15 @@ class _NoteEditorState extends State<NoteEditor>
     unawaited(_saveNow(silent: true));
     _saveTimer?.cancel();
     _autoSummaryTimer?.cancel();
+    _foldVisibilityTimer?.cancel();
     _documentSubscription?.cancel();
     _titleController.dispose();
     _descriptionController.dispose();
     _quickNoteController.dispose();
     _searchController.dispose();
     _quillController?.dispose();
+    _isSaving.dispose();
+    _hasPendingChanges.dispose();
     super.dispose();
   }
 
@@ -785,6 +923,7 @@ class _NoteEditorState extends State<NoteEditor>
   void _bindFile(LectureFile? file) {
     _saveTimer?.cancel();
     _autoSummaryTimer?.cancel();
+    _foldVisibilityTimer?.cancel();
     _documentSubscription?.cancel();
     _boundFileId = file?.id;
     _titleController.text = file?.title ?? '';
@@ -792,20 +931,26 @@ class _NoteEditorState extends State<NoteEditor>
     _quickNoteController.text = file?.quickNote ?? '';
     _quillController?.dispose();
     final decoded =
-        jsonDecode(widget.controller.documentJsonForFile(file)) as List;
+        _stripFoldHiddenFromDeltaJson(
+              jsonDecode(widget.controller.documentJsonForFile(file)),
+            )
+            as List;
     _quillController = quill.QuillController(
       document: quill.Document.fromJson(decoded.cast<Map<String, dynamic>>()),
       selection: const TextSelection.collapsed(offset: 0),
     );
-    _documentSubscription = _quillController!.document.changes.listen(
-      (_) {
-        _scheduleSave();
-        if (_searchController.text.trim().isNotEmpty) {
-          _refreshSearch();
-        }
-      },
-    );
-    _hasPendingChanges = false;
+    _documentSubscription = _quillController!.document.changes.listen((_) {
+      if (_isApplyingFoldVisibility) {
+        return;
+      }
+      _syncCollapsedHeadingOffsets();
+      _applyFoldVisibility();
+      _scheduleSave();
+      if (_searchController.text.trim().isNotEmpty) {
+        _refreshSearch();
+      }
+    });
+    _hasPendingChanges.value = false;
     _surface = EditorSurface.note;
     _showOutline = false;
     _showFormatToolbar = false;
@@ -816,22 +961,28 @@ class _NoteEditorState extends State<NoteEditor>
     _flashcards.clear();
     _flashcardIndex = 0;
     _showFlashAnswer = false;
+    _applyFoldVisibility();
   }
 
   void _scheduleSave() {
     if (_boundFileId == null) {
       return;
     }
-    setState(() => _hasPendingChanges = true);
+    _hasPendingChanges.value = true;
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(seconds: 3), _saveNow);
     _scheduleAutoSummary();
   }
 
   void _scheduleAutoSummary() {
+    final file = widget.controller.selectedFile;
+    if (file == null || !file.autoSummaryEnabled) {
+      _autoSummaryTimer?.cancel();
+      return;
+    }
     _autoSummaryTimer?.cancel();
     _autoSummaryTimer = Timer(
-      Duration(milliseconds: widget.controller.fastMode ? 1200 : 1800),
+      Duration(milliseconds: widget.controller.fastMode ? 4500 : 6000),
       _runAutoSummary,
     );
   }
@@ -841,8 +992,215 @@ class _NoteEditorState extends State<NoteEditor>
     if (quillController == null) {
       return '';
     }
-    final contentJson = jsonEncode(quillController.document.toDelta().toJson());
+    final contentJson = _contentJsonForPersistence(quillController);
     return widget.controller.notePlainTextFromContent(contentJson);
+  }
+
+  String _contentJsonForPersistence(quill.QuillController quillController) {
+    final json = quillController.document.toDelta().toJson();
+    return jsonEncode(_stripFoldHiddenFromDeltaJson(json));
+  }
+
+  Map<int, LeccyHeadingFoldRange> _foldRangesByHeadingOffset() {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return const {};
+    }
+    return {
+      for (final range in computeLeccyHeadingFoldRanges(
+        quillController.document,
+      ))
+        range.headingOffset: range,
+    };
+  }
+
+  bool _isFoldHiddenLine(quill.Line line) {
+    return line.style.attributes[leccyFoldHiddenAttributeKey]?.value == true;
+  }
+
+  bool _hasFoldLeadingMarker(quill.Line line) {
+    return line.style.attributes[quill.Attribute.list.key]?.value ==
+        _foldLeadingListValue;
+  }
+
+  int? _temporaryHeadingLevelForLine(quill.Line line) {
+    final value = line.style.attributes[_foldHeadingLevelAttributeKey]?.value;
+    return value is int ? value : null;
+  }
+
+  quill.Attribute<int?> _headerAttributeForLevel(int level) {
+    return switch (level) {
+      1 => quill.Attribute.h1,
+      2 => quill.Attribute.h2,
+      3 => quill.Attribute.h3,
+      4 => quill.Attribute.h4,
+      5 => quill.Attribute.h5,
+      _ => quill.Attribute.h6,
+    };
+  }
+
+  void _syncCollapsedHeadingOffsets() {
+    final ranges = _foldRangesByHeadingOffset();
+    _collapsedSectionOffsets.removeWhere(
+      (offset) => ranges[offset]?.canFold != true,
+    );
+  }
+
+  void _toggleHeadingFold(int headingOffset) {
+    setState(() {
+      if (_collapsedSectionOffsets.contains(headingOffset)) {
+        _collapsedSectionOffsets.remove(headingOffset);
+      } else {
+        _collapsedSectionOffsets.add(headingOffset);
+      }
+    });
+    _applyFoldVisibility();
+  }
+
+  Widget? _buildFoldLeading(quill.Node node, dynamic _) {
+    if (node is! quill.Line) {
+      return null;
+    }
+    if (_isFoldHiddenLine(node)) {
+      return const SizedBox.shrink();
+    }
+    final level = _headingLevelForLine(node);
+    if (level == null) {
+      return null;
+    }
+    final range = _foldRangesByHeadingOffset()[node.documentOffset];
+    if (range?.canFold != true) {
+      return const SizedBox(width: 32);
+    }
+    final isCollapsed = _collapsedSectionOffsets.contains(node.documentOffset);
+    return SizedBox(
+      width: 32,
+      child: IconButton(
+        tooltip: isCollapsed ? 'Expand section' : 'Collapse section',
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        iconSize: 20,
+        onPressed: () => _toggleHeadingFold(node.documentOffset),
+        icon: Icon(
+          isCollapsed
+              ? Icons.keyboard_arrow_right_rounded
+              : Icons.keyboard_arrow_down_rounded,
+        ),
+      ),
+    );
+  }
+
+  TextStyle _foldStyle(quill.Attribute attribute) {
+    if (attribute.key == _foldHeadingLevelAttributeKey) {
+      return switch (attribute.value) {
+        1 => const TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
+        2 => const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+        3 => const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+        _ => const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+      };
+    }
+    if (attribute.key != leccyFoldHiddenAttributeKey ||
+        attribute.value != true) {
+      return const TextStyle();
+    }
+    return const TextStyle(
+      color: Colors.transparent,
+      backgroundColor: Colors.transparent,
+      fontSize: 0.1,
+      height: 0.01,
+    );
+  }
+
+  void _applyFoldVisibility() {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final ranges = _foldRangesByHeadingOffset();
+    final hiddenOffsets = <int>{};
+    for (final headingOffset in _collapsedSectionOffsets) {
+      final range = ranges[headingOffset];
+      if (range != null) {
+        hiddenOffsets.addAll(range.childLineOffsets);
+      }
+    }
+    final leadingOffsets = {
+      for (final range in ranges.values)
+        if (range.canFold) range.headingOffset,
+    };
+
+    _isApplyingFoldVisibility = true;
+    try {
+      for (final line in _documentLines(quillController.document)) {
+        final shouldHaveLeading = leadingOffsets.contains(line.documentOffset);
+        final hasLeading = _hasFoldLeadingMarker(line);
+        final temporaryHeadingLevel = _temporaryHeadingLevelForLine(line);
+        final range = ranges[line.documentOffset];
+        if (shouldHaveLeading && range != null) {
+          if (temporaryHeadingLevel != range.headingLevel) {
+            quillController.formatText(
+              line.documentOffset,
+              line.length,
+              _foldHeadingLevelAttribute(range.headingLevel),
+              // ignore: experimental_member_use
+              shouldNotifyListeners: false,
+            );
+          }
+          if (!hasLeading) {
+            quillController.formatText(
+              line.documentOffset,
+              line.length,
+              _foldLeadingAttribute,
+              // ignore: experimental_member_use
+              shouldNotifyListeners: false,
+            );
+          }
+        } else if (hasLeading || temporaryHeadingLevel != null) {
+          if (temporaryHeadingLevel != null) {
+            quillController.formatText(
+              line.documentOffset,
+              line.length,
+              _headerAttributeForLevel(temporaryHeadingLevel),
+              // ignore: experimental_member_use
+              shouldNotifyListeners: false,
+            );
+          }
+          quillController.formatText(
+            line.documentOffset,
+            line.length,
+            _clearFoldLeadingAttribute,
+            // ignore: experimental_member_use
+            shouldNotifyListeners: false,
+          );
+          quillController.formatText(
+            line.documentOffset,
+            line.length,
+            _clearFoldHeadingLevelAttribute,
+            // ignore: experimental_member_use
+            shouldNotifyListeners: false,
+          );
+        }
+
+        final shouldHide = hiddenOffsets.contains(line.documentOffset);
+        final isHidden = _isFoldHiddenLine(line);
+        if (shouldHide == isHidden) {
+          continue;
+        }
+        quillController.formatText(
+          line.documentOffset,
+          line.length,
+          shouldHide ? _foldHiddenAttribute : _clearFoldHiddenAttribute,
+          // ignore: experimental_member_use
+          shouldNotifyListeners: false,
+        );
+      }
+    } finally {
+      _foldVisibilityTimer?.cancel();
+      _foldVisibilityTimer = Timer(
+        const Duration(milliseconds: 250),
+        () => _isApplyingFoldVisibility = false,
+      );
+    }
   }
 
   void _applyHighlight(Color color) {
@@ -856,7 +1214,9 @@ class _NoteEditorState extends State<NoteEditor>
     }
     final rgb = color.toARGB32() & 0x00FFFFFF;
     final hex = '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
-    quillController.formatSelection(quill.Attribute.fromKeyValue('background', hex));
+    quillController.formatSelection(
+      quill.Attribute.fromKeyValue('background', hex),
+    );
   }
 
   void _clearHighlight() {
@@ -941,7 +1301,8 @@ class _NoteEditorState extends State<NoteEditor>
     if (_searchOffsets.isEmpty) {
       return;
     }
-    final previous = (_activeSearchMatch - 1 + _searchOffsets.length) %
+    final previous =
+        (_activeSearchMatch - 1 + _searchOffsets.length) %
         _searchOffsets.length;
     _jumpToSearchMatch(previous);
   }
@@ -978,7 +1339,9 @@ class _NoteEditorState extends State<NoteEditor>
 
     void addLine(quill.Line line) {
       final full = line.toPlainText();
-      final text = full.endsWith('\n') ? full.substring(0, full.length - 1) : full;
+      final text = full.endsWith('\n')
+          ? full.substring(0, full.length - 1)
+          : full;
       final trimmed = text.trim();
       final header = line.style.attributes[quill.Attribute.header.key];
       final level = header?.value is int ? header!.value as int : 0;
@@ -1011,7 +1374,8 @@ class _NoteEditorState extends State<NoteEditor>
       }
     }
 
-    for (final node in quillController.document.root.children.whereType<quill.Node>()) {
+    for (final node
+        in quillController.document.root.children.whereType<quill.Node>()) {
       walk(node);
     }
     if (sections.isEmpty) {
@@ -1057,7 +1421,10 @@ class _NoteEditorState extends State<NoteEditor>
 
     final cards = <_FlashCardItem>[];
     for (final segment in segments.take(12)) {
-      final words = segment.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      final words = segment
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
       if (words.length < 3) {
         continue;
       }
@@ -1103,7 +1470,8 @@ class _NoteEditorState extends State<NoteEditor>
       return;
     }
     setState(() {
-      _flashcardIndex = (_flashcardIndex - 1 + _flashcards.length) % _flashcards.length;
+      _flashcardIndex =
+          (_flashcardIndex - 1 + _flashcards.length) % _flashcards.length;
       _showFlashAnswer = false;
     });
   }
@@ -1111,6 +1479,10 @@ class _NoteEditorState extends State<NoteEditor>
   Future<void> _runAutoSummary() async {
     final file = widget.controller.selectedFile;
     if (file == null || !file.autoSummaryEnabled || _isSummarizing) {
+      return;
+    }
+    if (_hasPendingChanges.value || _isSaving.value) {
+      _scheduleAutoSummary();
       return;
     }
     setState(() => _isSummarizing = true);
@@ -1163,9 +1535,9 @@ class _NoteEditorState extends State<NoteEditor>
     }
 
     if (!silent && mounted) {
-      setState(() => _isSaving = true);
+      _isSaving.value = true;
     }
-    final contentJson = jsonEncode(quillController.document.toDelta().toJson());
+    final contentJson = _contentJsonForPersistence(quillController);
     await widget.controller.saveFileDraft(
       file.copyWith(
         title: _titleController.text.trim().isEmpty
@@ -1175,18 +1547,17 @@ class _NoteEditorState extends State<NoteEditor>
         quickNote: _quickNoteController.text.trim(),
         contentJson: contentJson,
       ),
+      notify: false,
     );
 
     if (!silent && mounted) {
-      setState(() {
-        _isSaving = false;
-        _hasPendingChanges = false;
-      });
+      _isSaving.value = false;
+      _hasPendingChanges.value = false;
       return;
     }
 
-    _isSaving = false;
-    _hasPendingChanges = false;
+    _isSaving.value = false;
+    _hasPendingChanges.value = false;
   }
 
   @override
@@ -1224,9 +1595,19 @@ class _NoteEditorState extends State<NoteEditor>
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _SaveState(
-                        isSaving: _isSaving,
-                        hasPendingChanges: _hasPendingChanges,
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _isSaving,
+                        builder: (context, isSavingValue, child) {
+                          return ValueListenableBuilder<bool>(
+                            valueListenable: _hasPendingChanges,
+                            builder: (context, hasPendingChangesValue, child) {
+                              return _SaveState(
+                                isSaving: isSavingValue,
+                                hasPendingChanges: hasPendingChangesValue,
+                              );
+                            },
+                          );
+                        },
                       ),
                       if (_surface == EditorSurface.note) ...[
                         const SizedBox(width: 6),
@@ -1302,7 +1683,9 @@ class _NoteEditorState extends State<NoteEditor>
                               final file = widget.controller.selectedFile;
                               if (file != null && file.autoSummaryEnabled) {
                                 await widget.controller
-                                    .setAutoSummaryEnabledForSelectedFile(false);
+                                    .setAutoSummaryEnabledForSelectedFile(
+                                      false,
+                                    );
                               }
                               _scheduleSave();
                             },
@@ -1338,12 +1721,9 @@ class _NoteEditorState extends State<NoteEditor>
                                 onPressed: _isSummarizing
                                     ? null
                                     : _generateSummaryNow,
-                                icon:
-                                    const Icon(Icons.auto_awesome_rounded),
+                                icon: const Icon(Icons.auto_awesome_rounded),
                                 label: Text(
-                                  _isSummarizing
-                                      ? 'Summarizing'
-                                      : 'Summary',
+                                  _isSummarizing ? 'Summarizing' : 'Summary',
                                 ),
                               ),
                               Row(
@@ -1354,8 +1734,8 @@ class _NoteEditorState extends State<NoteEditor>
                                     onChanged: (value) {
                                       widget.controller
                                           .setAutoSummaryEnabledForSelectedFile(
-                                        value,
-                                      );
+                                            value,
+                                          );
                                     },
                                   ),
                                 ],
@@ -1382,9 +1762,8 @@ class _NoteEditorState extends State<NoteEditor>
               onHeadingSelected: _applyHeading,
               onHighlight: _applyHighlight,
               onClearHighlight: _clearHighlight,
-              onToggleFormatToolbar: () => setState(
-                () => _showFormatToolbar = !_showFormatToolbar,
-              ),
+              onToggleFormatToolbar: () =>
+                  setState(() => _showFormatToolbar = !_showFormatToolbar),
               onSearchChanged: (_) => _refreshSearch(),
               onSearchSubmitted: (_) => _jumpToSearchMatch(0),
               onPreviousSearch: _searchOffsets.isEmpty
@@ -1404,19 +1783,26 @@ class _NoteEditorState extends State<NoteEditor>
                         Expanded(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              color: Color(widget.controller.editorPaperColorValue),
+                              color: Color(
+                                widget.controller.editorPaperColorValue,
+                              ),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: Theme.of(context).colorScheme.outlineVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outlineVariant,
                               ),
                             ),
                             child: Padding(
                               padding: const EdgeInsets.all(22),
                               child: quill.QuillEditor.basic(
                                 controller: quillController,
-                                config: const quill.QuillEditorConfig(
+                                config: quill.QuillEditorConfig(
                                   placeholder: 'Write the lecture note here...',
                                   padding: EdgeInsets.zero,
+                                  // ignore: experimental_member_use
+                                  customLeadingBlockBuilder: _buildFoldLeading,
+                                  customStyleBuilder: _foldStyle,
                                 ),
                               ),
                             ),
@@ -1522,24 +1908,24 @@ class _NoteActionBar extends StatelessWidget {
                 child: Row(
                   children: [
                     SegmentedButton<int>(
-                    style: SegmentedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
+                      style: SegmentedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      segments: const [
+                        ButtonSegment(value: 1, label: Text('H1')),
+                        ButtonSegment(value: 2, label: Text('H2')),
+                        ButtonSegment(value: 0, label: Text('Body')),
+                      ],
+                      selected: const <int>{},
+                      emptySelectionAllowed: true,
+                      onSelectionChanged: (value) {
+                        if (value.isEmpty) {
+                          return;
+                        }
+                        final picked = value.first;
+                        onHeadingSelected(picked == 0 ? null : picked);
+                      },
                     ),
-                    segments: const [
-                      ButtonSegment(value: 1, label: Text('H1')),
-                      ButtonSegment(value: 2, label: Text('H2')),
-                      ButtonSegment(value: 0, label: Text('Body')),
-                    ],
-                    selected: const <int>{},
-                    emptySelectionAllowed: true,
-                    onSelectionChanged: (value) {
-                      if (value.isEmpty) {
-                        return;
-                      }
-                      final picked = value.first;
-                      onHeadingSelected(picked == 0 ? null : picked);
-                    },
-                  ),
                     const SizedBox(width: 10),
                     for (var i = 0; i < markerColors.length; i++)
                       Padding(
@@ -1548,8 +1934,9 @@ class _NoteActionBar extends StatelessWidget {
                           tooltip: 'Marker ${i + 1}',
                           onPressed: () => onHighlight(markerColors[i]),
                           style: IconButton.styleFrom(
-                            backgroundColor:
-                                markerColors[i].withValues(alpha: 0.55),
+                            backgroundColor: markerColors[i].withValues(
+                              alpha: 0.55,
+                            ),
                             minimumSize: const Size(36, 36),
                           ),
                           icon: const Icon(Icons.draw_rounded, size: 18),
@@ -1654,10 +2041,7 @@ class _DocumentOutlinePanel extends StatelessWidget {
         padding: const EdgeInsets.all(10),
         child: ListView(
           children: [
-            Text(
-              'Accordion',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('Accordion', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             for (final section in sections)
               Card(
@@ -1759,7 +2143,10 @@ class _FlashcardWorkspace extends StatelessWidget {
               children: [
                 const Icon(Icons.style_rounded),
                 const SizedBox(width: 8),
-                Text('Flashcards', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Flashcards',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const Spacer(),
                 if (cards.isNotEmpty)
                   Chip(
@@ -1828,7 +2215,9 @@ class _FlashcardWorkspace extends StatelessWidget {
               Expanded(
                 child: cards.isEmpty
                     ? const Center(
-                        child: Text('Generate flashcards from your note content.'),
+                        child: Text(
+                          'Generate flashcards from your note content.',
+                        ),
                       )
                     : InkWell(
                         borderRadius: BorderRadius.circular(20),
@@ -1838,9 +2227,13 @@ class _FlashcardWorkspace extends StatelessWidget {
                           padding: const EdgeInsets.all(18),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(20),
-                            color: Theme.of(context).colorScheme.surfaceContainer,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainer,
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.outlineVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Column(
@@ -2697,8 +3090,8 @@ class _GlassPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(32),
         child: BackdropFilter(
           filter: ImageFilter.blur(
-            sigmaX: fastMode ? 1 : 8,
-            sigmaY: fastMode ? 1 : 8,
+            sigmaX: fastMode ? 4 : 20,
+            sigmaY: fastMode ? 4 : 20,
           ),
           child: Container(
             decoration: BoxDecoration(
@@ -2706,23 +3099,23 @@ class _GlassPanel extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isDark
-                    ? const [Color(0x3AFFFFFF), Color(0x1AFFFFFF)]
-                    : const [Color(0xE8FFFFFF), Color(0xAFFFFFFF)],
+                    ? const [Color(0x22FFFFFF), Color(0x08FFFFFF)]
+                    : [const Color(0xDDFFFFFF), const Color(0x88FFFFFF)],
               ),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(
                 color: isDark
-                    ? const Color(0x44FFFFFF)
-                    : const Color(0x66FFFFFF),
+                    ? const Color(0x22FFFFFF)
+                    : const Color(0x44FFFFFF),
               ),
               boxShadow: [
                 BoxShadow(
                   color: isDark
-                      ? const Color(0x66000000)
-                      : const Color(0x220E1933),
-                  blurRadius: fastMode ? 4 : 16,
-                  spreadRadius: -6,
-                  offset: const Offset(0, 16),
+                      ? const Color(0x44000000)
+                      : const Color(0x110E1933),
+                  blurRadius: fastMode ? 8 : 32,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
@@ -2734,13 +3127,84 @@ class _GlassPanel extends StatelessWidget {
   }
 }
 
-String _fontPresetLabel(AppFontPreset preset) {
-  return switch (preset) {
-    AppFontPreset.workSans => 'Work Sans',
-    AppFontPreset.nunito => 'Nunito Sans',
-    AppFontPreset.sourceSerif => 'Source Serif 4',
-    AppFontPreset.lato => 'Lato',
-  };
+Future<void> _showViewOptions(
+  BuildContext context,
+  AppController controller,
+) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (context) {
+      return ListenableBuilder(
+        listenable: controller,
+        builder: (context, child) => _GlassPanel(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          fastMode: controller.fastMode,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'View Options',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Layout'),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: true,
+                          icon: Icon(Icons.grid_view_rounded),
+                        ),
+                        ButtonSegment(
+                          value: false,
+                          icon: Icon(Icons.view_list_rounded),
+                        ),
+                      ],
+                      selected: {controller.isGrid},
+                      onSelectionChanged: (value) =>
+                          controller.setGrid(value.first),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Sort by'),
+                    DropdownButton<FolderSortMode>(
+                      value: controller.sortMode,
+                      onChanged: (mode) =>
+                          mode != null ? controller.setSortMode(mode) : null,
+                      items: const [
+                        DropdownMenuItem(
+                          value: FolderSortMode.custom,
+                          child: Text('Custom'),
+                        ),
+                        DropdownMenuItem(
+                          value: FolderSortMode.name,
+                          child: Text('Name'),
+                        ),
+                        DropdownMenuItem(
+                          value: FolderSortMode.progress,
+                          child: Text('Progress'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 void _showSettingsSheet(BuildContext context, AppController controller) {
@@ -2846,10 +3310,8 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                         child: _AnyColorPicker(
                           value: Color(controller.editorPaperColorValue),
-                          onChanged: (color) =>
-                              controller.setEditorPaperColorValue(
-                                color.toARGB32(),
-                              ),
+                          onChanged: (color) => controller
+                              .setEditorPaperColorValue(color.toARGB32()),
                         ),
                       ),
                     ],
@@ -2858,7 +3320,9 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                     leading: const Icon(Icons.key_rounded),
                     title: const Text('API key'),
                     subtitle: Text(
-                      controller.hasApiKey ? 'Saved in this session' : 'Not set',
+                      controller.hasApiKey
+                          ? 'Saved in this session'
+                          : 'Not set',
                     ),
                     children: [
                       Padding(
