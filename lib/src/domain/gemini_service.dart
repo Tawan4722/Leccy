@@ -56,6 +56,24 @@ class GeminiService {
         .toList();
   }
 
+  Future<StructuredNote> restructureNote({
+    required String apiKey,
+    required String title,
+    required String noteText,
+  }) async {
+    final json = await _generateJson(
+      apiKey: apiKey,
+      prompt:
+          'Restructure this lecture note into a clean hierarchy as JSON. '
+          'Return exactly these keys: "title" and "sections". "sections" must '
+          'be an array where each section has "heading", optional "body", and '
+          'optional "subsections". Each subsection has "heading" and optional '
+          '"body". Keep all important facts. Do not invent facts.\n\n'
+          'Current title: $title\n\nOriginal notes:\n$noteText',
+    );
+    return StructuredNote.fromJson(json);
+  }
+
   Future<Map<String, Object?>> _generateJson({
     required String apiKey,
     required String prompt,
@@ -158,6 +176,76 @@ class GeneratedFlashcard {
     'answer': answer,
     'topic': topic,
   };
+}
+
+class StructuredNote {
+  const StructuredNote({required this.title, required this.sections});
+
+  final String title;
+  final List<StructuredSection> sections;
+
+  factory StructuredNote.fromJson(Map<String, Object?> json) {
+    final sections = json['sections'];
+    if (sections is! List) {
+      throw const GeminiException('Gemini did not return note sections.');
+    }
+    final parsedSections = sections
+        .whereType<Map>()
+        .map((item) => StructuredSection.fromJson(item.cast<String, Object?>()))
+        .where((section) => section.heading.trim().isNotEmpty)
+        .toList();
+    if (parsedSections.isEmpty) {
+      throw const GeminiException('Gemini returned no usable sections.');
+    }
+    return StructuredNote(
+      title: json['title']?.toString().trim() ?? '',
+      sections: parsedSections,
+    );
+  }
+}
+
+class StructuredSection {
+  const StructuredSection({
+    required this.heading,
+    required this.body,
+    required this.subsections,
+  });
+
+  final String heading;
+  final List<String> body;
+  final List<StructuredSection> subsections;
+
+  factory StructuredSection.fromJson(Map<String, Object?> json) {
+    return StructuredSection(
+      heading: json['heading']?.toString() ?? '',
+      body: _stringList(json['body']),
+      subsections: (json['subsections'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (item) => StructuredSection.fromJson(item.cast<String, Object?>()),
+          )
+          .where((section) => section.heading.trim().isNotEmpty)
+          .toList(),
+    );
+  }
+
+  static List<String> _stringList(Object? value) {
+    if (value == null) {
+      return const [];
+    }
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return value
+        .toString()
+        .split(RegExp(r'\n+'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
 }
 
 class GeminiException implements Exception {

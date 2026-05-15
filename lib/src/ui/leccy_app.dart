@@ -932,6 +932,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   final ValueNotifier<bool> _hasPendingChanges = ValueNotifier(false);
   bool _isSummarizing = false;
   bool _isGeneratingWorkspace = false;
+  bool _isRestructuring = false;
   bool _showOutline = false;
   bool _showFlashAnswer = false;
   bool _showFormatToolbar = false;
@@ -941,6 +942,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   int _flashcardIndex = 0;
   final Set<int> _collapsedSectionOffsets = {};
   final List<GeneratedFlashcard> _flashcards = [];
+  _RestructureBackup? _lastRestructureBackup;
   bool _isApplyingFoldVisibility = false;
 
   static const List<Color> _markerColors = [
@@ -1915,6 +1917,128 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _restructureWithGemini() async {
+    final file = widget.controller.selectedFile;
+    final quillController = _quillController;
+    if (file == null || quillController == null || _isRestructuring) {
+      return;
+    }
+    final noteText = _currentNotePlainText().trim();
+    if (noteText.isEmpty) {
+      _showMessage('Write notes first, then restructure.');
+      return;
+    }
+    final backup = _RestructureBackup(
+      title: _titleController.text,
+      description: _descriptionController.text,
+      quickNote: _quickNoteController.text,
+      contentJson: _contentJsonForPersistence(quillController),
+    );
+    setState(() => _isRestructuring = true);
+    try {
+      final structured = await _geminiService.restructureNote(
+        apiKey: widget.controller.apiKey,
+        title: file.title,
+        noteText: noteText,
+      );
+      final nextDelta = _deltaFromStructuredNote(structured);
+      if (nextDelta.isEmpty) {
+        throw const GeminiException('Gemini returned an empty structure.');
+      }
+      _lastRestructureBackup = backup;
+      _titleController.text = structured.title.trim().isEmpty
+          ? _titleController.text
+          : structured.title.trim();
+      _replaceDocumentJson(nextDelta);
+      await _saveNow();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Restructured note. Original is kept for restore.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Restore',
+            onPressed: _restoreRestructureBackup,
+          ),
+        ),
+      );
+    } catch (error) {
+      _titleController.text = backup.title;
+      _descriptionController.text = backup.description;
+      _quickNoteController.text = backup.quickNote;
+      final decoded = jsonDecode(backup.contentJson);
+      if (decoded is List) {
+        _replaceDocumentJson(decoded.cast<Map<String, dynamic>>());
+      }
+      _showMessage('Restructure failed. Original note was kept. $error');
+    } finally {
+      if (mounted) {
+        setState(() => _isRestructuring = false);
+      }
+    }
+  }
+
+  Future<void> _restoreRestructureBackup() async {
+    final backup = _lastRestructureBackup;
+    if (backup == null) {
+      _showMessage('No restructure backup available.');
+      return;
+    }
+    _titleController.text = backup.title;
+    _descriptionController.text = backup.description;
+    _quickNoteController.text = backup.quickNote;
+    final decoded = jsonDecode(backup.contentJson);
+    if (decoded is List) {
+      _replaceDocumentJson(decoded.cast<Map<String, dynamic>>());
+      await _saveNow();
+      _showMessage('Restored original note.');
+    }
+  }
+
+  List<Map<String, dynamic>> _deltaFromStructuredNote(StructuredNote note) {
+    final ops = <Map<String, dynamic>>[];
+
+    void addText(String text) {
+      final clean = text.trim();
+      if (clean.isNotEmpty) {
+        ops.add({'insert': '$clean\n'});
+      }
+    }
+
+    void addHeading(String text, int level) {
+      final clean = text.trim();
+      if (clean.isNotEmpty) {
+        ops.add({'insert': clean});
+        ops.add({
+          'insert': '\n',
+          'attributes': {'header': level},
+        });
+      }
+    }
+
+    void addSection(StructuredSection section, int level) {
+      addHeading(section.heading, level);
+      for (final line in section.body) {
+        addText(line);
+      }
+      for (final subsection in section.subsections) {
+        addSection(subsection, math.min(level + 1, 3));
+      }
+    }
+
+    for (final section in note.sections) {
+      addSection(section, 1);
+    }
+    if (ops.isEmpty || ops.last['insert'] != '\n') {
+      ops.add({'insert': '\n'});
+    }
+    return ops;
+  }
+
   Future<void> _saveNow({bool silent = false}) async {
     _saveTimer?.cancel();
     final boundFileId = _boundFileId;
@@ -2153,6 +2277,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               searchController: _searchController,
               markerColors: _markerColors,
               showFormatToolbar: _showFormatToolbar,
+              isRestructuring: _isRestructuring,
               searchLabel: _searchController.text.trim().isEmpty
                   ? ''
                   : '${_searchOffsets.isEmpty ? 0 : _activeSearchMatch + 1}/${_searchOffsets.length}',
@@ -2165,6 +2290,10 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onInsertLink: _insertLink,
               onImportFile: _importLectureFile,
               onExportFile: _exportLectureFile,
+              onRestructure: _restructureWithGemini,
+              onRestoreRestructure: _lastRestructureBackup == null
+                  ? null
+                  : _restoreRestructureBackup,
               onToggleFormatToolbar: () =>
                   setState(() => _showFormatToolbar = !_showFormatToolbar),
               onSearchChanged: (_) => _refreshSearch(),
@@ -2228,6 +2357,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     _collapsedSectionOffsets.remove(offset);
                                   }
                                 });
+                                _applyFoldVisibility();
                               },
                               onJump: _jumpToOffset,
                             ),
@@ -2284,6 +2414,7 @@ class _NoteActionBar extends StatelessWidget {
     required this.searchController,
     required this.markerColors,
     required this.showFormatToolbar,
+    required this.isRestructuring,
     required this.searchLabel,
     required this.onHeadingSelected,
     required this.onHighlight,
@@ -2294,6 +2425,8 @@ class _NoteActionBar extends StatelessWidget {
     required this.onInsertLink,
     required this.onImportFile,
     required this.onExportFile,
+    required this.onRestructure,
+    required this.onRestoreRestructure,
     required this.onToggleFormatToolbar,
     required this.onSearchChanged,
     required this.onSearchSubmitted,
@@ -2305,6 +2438,7 @@ class _NoteActionBar extends StatelessWidget {
   final TextEditingController searchController;
   final List<Color> markerColors;
   final bool showFormatToolbar;
+  final bool isRestructuring;
   final String searchLabel;
   final ValueChanged<int?> onHeadingSelected;
   final ValueChanged<Color> onHighlight;
@@ -2315,6 +2449,8 @@ class _NoteActionBar extends StatelessWidget {
   final VoidCallback onInsertLink;
   final VoidCallback onImportFile;
   final VoidCallback onExportFile;
+  final VoidCallback onRestructure;
+  final VoidCallback? onRestoreRestructure;
   final VoidCallback onToggleFormatToolbar;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
@@ -2422,6 +2558,22 @@ class _NoteActionBar extends StatelessWidget {
                       iconSize: 18,
                     ),
                     const SizedBox(width: 8),
+                    FilledButton.tonalIcon(
+                      onPressed: isRestructuring ? null : onRestructure,
+                      icon: const Icon(Icons.account_tree_rounded, size: 18),
+                      label: Text(
+                        isRestructuring ? 'Structuring' : 'Restructure',
+                      ),
+                    ),
+                    if (onRestoreRestructure != null) ...[
+                      const SizedBox(width: 4),
+                      TextButton.icon(
+                        onPressed: onRestoreRestructure,
+                        icon: const Icon(Icons.restore_rounded, size: 18),
+                        label: const Text('Restore original'),
+                      ),
+                    ],
+                    const SizedBox(width: 8),
                     _GlassIconButton(
                       tooltip: showFormatToolbar
                           ? 'Hide formatting'
@@ -2485,6 +2637,20 @@ class _LinkDraft {
 
   final String url;
   final String label;
+}
+
+class _RestructureBackup {
+  const _RestructureBackup({
+    required this.title,
+    required this.description,
+    required this.quickNote,
+    required this.contentJson,
+  });
+
+  final String title;
+  final String description;
+  final String quickNote;
+  final String contentJson;
 }
 
 class _LinkDialog extends StatefulWidget {
