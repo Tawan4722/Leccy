@@ -519,11 +519,11 @@ class FolderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Color(folder.colorValue);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Card(
-      color: isSelected
-          ? color.withValues(alpha: isDark ? 0.30 : 0.22)
-          : (isDark ? const Color(0x332E3442) : const Color(0xEFFFFFFF)),
+    return _LiquidGlass(
+      borderRadius: 22,
+      selected: isSelected,
+      tint: color,
+      padding: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
         onTap: onTap,
@@ -564,16 +564,12 @@ class FolderTile extends StatelessWidget {
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: IconButton.filledTonal(
+                      child: _GlassIconButton(
                         tooltip: 'Customize folder',
-                        style: IconButton.styleFrom(
-                          minimumSize: const Size(30, 30),
-                          maximumSize: const Size(30, 30),
-                          padding: EdgeInsets.zero,
-                        ),
-                        iconSize: 16,
+                        icon: Icons.tune_rounded,
                         onPressed: onEdit,
-                        icon: const Icon(Icons.tune_rounded),
+                        size: 30,
+                        iconSize: 16,
                       ),
                     ),
                   ],
@@ -813,85 +809,72 @@ class FileTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      decoration: BoxDecoration(
-        color: isSelected
-            ? Theme.of(context).colorScheme.primaryContainer
-            : (isDark ? const Color(0x292D3748) : Colors.white),
+    return _LiquidGlass(
+      borderRadius: 20,
+      selected: isSelected,
+      tint: Theme.of(context).colorScheme.primary,
+      padding: EdgeInsets.zero,
+      child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.transparent,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: onTap,
-          onLongPress: onCheck,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 160),
-                  child: selectionMode
-                      ? Checkbox(
-                          key: const ValueKey('checkbox'),
-                          value: isChecked,
-                          onChanged: (_) => onCheck(),
-                        )
-                      : Icon(
-                          key: const ValueKey('lecture-icon'),
-                          isSelected
-                              ? Icons.radio_button_checked_rounded
-                              : Icons.article_outlined,
-                          color: isSelected
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+        onTap: onTap,
+        onLongPress: onCheck,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                child: selectionMode
+                    ? Checkbox(
+                        key: const ValueKey('checkbox'),
+                        value: isChecked,
+                        onChanged: (_) => onCheck(),
+                      )
+                    : Icon(
+                        key: const ValueKey('lecture-icon'),
+                        isSelected
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.article_outlined,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      file.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      file.description.isEmpty
+                          ? 'No description'
+                          : file.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: LinearProgressIndicator(
+                        minHeight: 7,
+                        value: file.progressPercent / 100,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        file.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        file.description.isEmpty
-                            ? 'No description'
-                            : file.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: LinearProgressIndicator(
-                          minHeight: 7,
-                          value: file.progressPercent / 100,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text('${file.progressPercent}%'),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              Text('${file.progressPercent}%'),
+            ],
           ),
         ),
       ),
@@ -1840,30 +1823,28 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       ),
                       if (_surface == EditorSurface.note) ...[
                         const SizedBox(width: 6),
-                        IconButton.filledTonal(
+                        _GlassIconButton(
                           tooltip: _showOutline
                               ? 'Hide accordion'
                               : 'Show accordion',
+                          selected: _showOutline,
                           onPressed: () =>
                               setState(() => _showOutline = !_showOutline),
-                          icon: Icon(
-                            _showOutline
-                                ? Icons.view_agenda_rounded
-                                : Icons.view_agenda_outlined,
-                          ),
+                          icon: _showOutline
+                              ? Icons.view_agenda_rounded
+                              : Icons.view_agenda_outlined,
                         ),
                       ],
                       const SizedBox(width: 6),
-                      IconButton.filledTonal(
+                      _GlassIconButton(
                         tooltip: widget.controller.editorFullscreen
                             ? 'Exit fullscreen'
                             : 'Fullscreen editor',
+                        selected: widget.controller.editorFullscreen,
                         onPressed: widget.controller.toggleEditorFullscreen,
-                        icon: Icon(
-                          widget.controller.editorFullscreen
-                              ? Icons.fullscreen_exit_rounded
-                              : Icons.fullscreen_rounded,
-                        ),
+                        icon: widget.controller.editorFullscreen
+                            ? Icons.fullscreen_exit_rounded
+                            : Icons.fullscreen_rounded,
                       ),
                       const SizedBox(width: 8),
                       SegmentedButton<EditorSurface>(
@@ -2190,16 +2171,12 @@ class _NoteActionBar extends StatelessWidget {
                     for (var i = 0; i < markerColors.length; i++)
                       Padding(
                         padding: const EdgeInsets.only(right: 4),
-                        child: IconButton.filledTonal(
+                        child: _GlassIconButton(
                           tooltip: 'Marker ${i + 1}',
                           onPressed: () => onHighlight(markerColors[i]),
-                          style: IconButton.styleFrom(
-                            backgroundColor: markerColors[i].withValues(
-                              alpha: 0.55,
-                            ),
-                            minimumSize: const Size(36, 36),
-                          ),
-                          icon: const Icon(Icons.draw_rounded, size: 18),
+                          icon: Icons.draw_rounded,
+                          size: 36,
+                          iconSize: 18,
                         ),
                       ),
                     IconButton(
@@ -2208,37 +2185,44 @@ class _NoteActionBar extends StatelessWidget {
                       icon: const Icon(Icons.format_color_reset_rounded),
                     ),
                     const SizedBox(width: 8),
-                    IconButton.filledTonal(
+                    _GlassIconButton(
                       tooltip: 'Insert picture',
                       onPressed: onInsertImage,
-                      icon: const Icon(Icons.image_outlined, size: 18),
+                      icon: Icons.image_outlined,
+                      size: 36,
+                      iconSize: 18,
                     ),
-                    IconButton.filledTonal(
+                    _GlassIconButton(
                       tooltip: 'Insert video',
                       onPressed: onInsertVideo,
-                      icon: const Icon(Icons.video_file_outlined, size: 18),
+                      icon: Icons.video_file_outlined,
+                      size: 36,
+                      iconSize: 18,
                     ),
-                    IconButton.filledTonal(
+                    _GlassIconButton(
                       tooltip: 'Draw',
                       onPressed: onInsertDrawing,
-                      icon: const Icon(Icons.gesture_rounded, size: 18),
+                      icon: Icons.gesture_rounded,
+                      size: 36,
+                      iconSize: 18,
                     ),
-                    IconButton.filledTonal(
+                    _GlassIconButton(
                       tooltip: 'Insert link',
                       onPressed: onInsertLink,
-                      icon: const Icon(Icons.link_rounded, size: 18),
+                      icon: Icons.link_rounded,
+                      size: 36,
+                      iconSize: 18,
                     ),
                     const SizedBox(width: 8),
-                    IconButton.filledTonal(
+                    _GlassIconButton(
                       tooltip: showFormatToolbar
                           ? 'Hide formatting'
                           : 'Show formatting',
+                      selected: showFormatToolbar,
                       onPressed: onToggleFormatToolbar,
-                      icon: Icon(
-                        showFormatToolbar
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.tune_rounded,
-                      ),
+                      icon: showFormatToolbar
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.tune_rounded,
                     ),
                     const SizedBox(width: 10),
                     SizedBox(
@@ -3868,12 +3852,9 @@ class _MetricChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return _LiquidGlass(
+      borderRadius: 12,
+      blur: 10,
       child: Text(
         '$label: ${value.toStringAsFixed(1)}',
         style: Theme.of(context).textTheme.bodySmall,
@@ -4009,6 +3990,119 @@ class _GlassPanel extends StatelessWidget {
               ],
             ),
             child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LiquidGlass extends StatelessWidget {
+  const _LiquidGlass({
+    required this.child,
+    this.borderRadius = 18,
+    this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    this.selected = false,
+    this.tint,
+    this.blur = 14,
+  });
+
+  final Widget child;
+  final double borderRadius;
+  final EdgeInsets padding;
+  final bool selected;
+  final Color? tint;
+  final double blur;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseTint = tint ?? Theme.of(context).colorScheme.primary;
+    final radius = BorderRadius.circular(borderRadius);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? const Color(0x33000000)
+                : baseTint.withValues(alpha: selected ? 0.18 : 0.08),
+            blurRadius: selected ? 24 : 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: selected
+                    ? [
+                        baseTint.withValues(alpha: isDark ? 0.34 : 0.24),
+                        Colors.white.withValues(alpha: isDark ? 0.10 : 0.50),
+                      ]
+                    : [
+                        Colors.white.withValues(alpha: isDark ? 0.13 : 0.62),
+                        Colors.white.withValues(alpha: isDark ? 0.05 : 0.24),
+                      ],
+              ),
+              border: Border.all(
+                color: selected
+                    ? baseTint.withValues(alpha: 0.60)
+                    : Colors.white.withValues(alpha: isDark ? 0.16 : 0.58),
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassIconButton extends StatelessWidget {
+  const _GlassIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.size = 38,
+    this.iconSize = 19,
+    this.selected = false,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final double size;
+  final double iconSize;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: _LiquidGlass(
+        selected: selected,
+        borderRadius: size / 2,
+        padding: EdgeInsets.zero,
+        blur: 12,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            iconSize: iconSize,
+            onPressed: onPressed,
+            icon: Icon(icon),
           ),
         ),
       ),
@@ -4349,10 +4443,18 @@ class _ProgressChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: 'Progress $percent%',
-      child: Chip(
-        visualDensity: VisualDensity.compact,
-        label: Text('$percent%'),
-        avatar: const Icon(Icons.flag_rounded, size: 16),
+      child: _LiquidGlass(
+        borderRadius: 18,
+        blur: 10,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.flag_rounded, size: 16),
+            const SizedBox(width: 6),
+            Text('$percent%'),
+          ],
+        ),
       ),
     );
   }
@@ -4376,10 +4478,14 @@ class _SaveState extends StatelessWidget {
         : hasPendingChanges
         ? Icons.pending_outlined
         : Icons.check_circle_outline_rounded;
-    return Chip(
-      avatar: Icon(icon, size: 16),
-      label: Text(text),
-      visualDensity: VisualDensity.compact,
+    return _LiquidGlass(
+      borderRadius: 18,
+      blur: 10,
+      selected: hasPendingChanges || isSaving,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [Icon(icon, size: 16), const SizedBox(width: 6), Text(text)],
+      ),
     );
   }
 }
