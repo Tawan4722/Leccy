@@ -322,21 +322,47 @@ class LeccyHomePage extends ConsumerWidget {
       );
     }
     return Scaffold(
-      body: Stack(
-        children: [
-          const _LiquidWallpaper(),
-          SafeArea(
-            child: Row(
-              children: [
-                SizedBox(width: 320, child: FolderLibrary(controller: app)),
-                Expanded(child: LectureWorkspace(controller: app)),
-              ],
+      body: _FastModeScope(
+        enabled: app.fastMode,
+        child: Stack(
+          children: [
+            const _LiquidWallpaper(),
+            SafeArea(
+              child: Row(
+                children: [
+                  SizedBox(width: 320, child: FolderLibrary(controller: app)),
+                  Expanded(child: LectureWorkspace(controller: app)),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+class _FastModeScope extends InheritedWidget {
+  const _FastModeScope({required this.enabled, required super.child});
+
+  final bool enabled;
+
+  static bool of(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<_FastModeScope>()
+            ?.enabled ??
+        false;
+  }
+
+  @override
+  bool updateShouldNotify(_FastModeScope oldWidget) =>
+      oldWidget.enabled != enabled;
+}
+
+Duration _motionDuration(BuildContext context, int normalMs) {
+  return _FastModeScope.of(context)
+      ? Duration.zero
+      : Duration(milliseconds: normalMs);
 }
 
 class FolderLibrary extends StatelessWidget {
@@ -754,9 +780,7 @@ class FileListPanel extends StatelessWidget {
                       onAction: controller.createFile,
                     )
                   : AnimatedSwitcher(
-                      duration: Duration(
-                        milliseconds: controller.fastMode ? 120 : 260,
-                      ),
+                      duration: _motionDuration(context, 260),
                       child: ListView.separated(
                         key: ValueKey(
                           '${folder.id}-${files.length}-${controller.fileSelectionMode}',
@@ -824,7 +848,7 @@ class FileTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AnimatedSwitcher(
-                duration: const Duration(milliseconds: 160),
+                duration: _motionDuration(context, 160),
                 child: selectionMode
                     ? Checkbox(
                         key: const ValueKey('checkbox'),
@@ -1406,6 +1430,169 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _insertEmbed(quill.BlockEmbed.image(imagePath));
   }
 
+  Future<void> _importLectureFile() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['txt', 'md', 'json', 'leccy'],
+      withData: true,
+    );
+    final picked = result?.files.single;
+    final bytes = picked?.bytes;
+    if (picked == null || bytes == null) {
+      return;
+    }
+    final text = utf8.decode(bytes, allowMalformed: true);
+    final extension = (picked.extension ?? '').toLowerCase();
+    try {
+      if (extension == 'json' || extension == 'leccy') {
+        await _importStructuredLecture(text, picked.name);
+      } else {
+        await _replaceNoteWithPlainText(text, picked.name);
+      }
+      _showMessage('Imported ${picked.name}.');
+    } catch (error) {
+      _showMessage('Could not import ${picked.name}: $error');
+    }
+  }
+
+  Future<void> _importStructuredLecture(String text, String fileName) async {
+    final decoded = jsonDecode(text);
+    if (decoded is List) {
+      _replaceDocumentJson(decoded.cast<Map<String, dynamic>>());
+      _scheduleSave();
+      return;
+    }
+    if (decoded is! Map) {
+      throw const FormatException('Unsupported JSON shape.');
+    }
+    final map = decoded.cast<String, Object?>();
+    final content = map['contentJson'] ?? map['content_json'] ?? map['delta'];
+    if (content is String) {
+      final decodedContent = jsonDecode(content);
+      if (decodedContent is! List) {
+        throw const FormatException('contentJson must be a Quill delta list.');
+      }
+      _replaceDocumentJson(decodedContent.cast<Map<String, dynamic>>());
+    } else if (content is List) {
+      _replaceDocumentJson(content.cast<Map<String, dynamic>>());
+    } else if (map['text'] is String) {
+      await _replaceNoteWithPlainText(map['text']! as String, fileName);
+    } else {
+      throw const FormatException('Missing contentJson or text.');
+    }
+
+    _titleController.text =
+        (map['title']?.toString().trim().isNotEmpty ?? false)
+        ? map['title'].toString()
+        : _titleFromFileName(fileName);
+    _descriptionController.text = map['description']?.toString() ?? '';
+    _quickNoteController.text =
+        (map['quickNote'] ?? map['quick_note'])?.toString() ?? '';
+
+    final file = widget.controller.selectedFile;
+    if (file != null) {
+      await widget.controller.updateSelectedFile(
+        title: _titleController.text,
+        description: _descriptionController.text,
+        quickNote: _quickNoteController.text,
+        contentJson: _contentJsonForPersistence(_quillController!),
+        sheetJson: map['sheetJson']?.toString() ?? file.sheetJson,
+        slidesJson: map['slidesJson']?.toString() ?? file.slidesJson,
+        flashcardsJson:
+            map['flashcardsJson']?.toString() ?? file.flashcardsJson,
+      );
+    }
+  }
+
+  Future<void> _replaceNoteWithPlainText(String text, String fileName) async {
+    final normalized = text.replaceAll('\r\n', '\n');
+    _replaceDocumentJson([
+      {'insert': normalized.endsWith('\n') ? normalized : '$normalized\n'},
+    ]);
+    _titleController.text = _titleFromFileName(fileName);
+    await _saveNow();
+  }
+
+  void _replaceDocumentJson(List<Map<String, dynamic>> json) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    quillController.document = quill.Document.fromJson(json);
+    quillController.updateSelection(
+      const TextSelection.collapsed(offset: 0),
+      quill.ChangeSource.local,
+    );
+    _syncCollapsedHeadingOffsets();
+    _applyFoldVisibility();
+  }
+
+  Future<void> _exportLectureFile() async {
+    final file = widget.controller.selectedFile;
+    final quillController = _quillController;
+    if (file == null || quillController == null) {
+      return;
+    }
+    await _saveNow();
+    if (!mounted) {
+      return;
+    }
+    final export = await showDialog<_ExportFormat>(
+      context: context,
+      builder: (context) => const _ExportDialog(),
+    );
+    if (export == null) {
+      return;
+    }
+    final latest = widget.controller.selectedFile ?? file;
+    final fileName = _safeFileName(latest.title);
+    final bytes = switch (export) {
+      _ExportFormat.text => utf8.encode(_currentNotePlainText()),
+      _ExportFormat.markdown => utf8.encode(_currentNotePlainText()),
+      _ExportFormat.leccy => utf8.encode(
+        const JsonEncoder.withIndent('  ').convert({
+          'title': latest.title,
+          'description': latest.description,
+          'quickNote': latest.quickNote,
+          'contentJson': _contentJsonForPersistence(quillController),
+          'sheetJson': latest.sheetJson,
+          'slidesJson': latest.slidesJson,
+          'flashcardsJson': latest.flashcardsJson,
+        }),
+      ),
+    };
+    final extension = switch (export) {
+      _ExportFormat.text => 'txt',
+      _ExportFormat.markdown => 'md',
+      _ExportFormat.leccy => 'leccy',
+    };
+    final path = await FilePicker.saveFile(
+      dialogTitle: 'Export lecture',
+      fileName: '$fileName.$extension',
+      type: FileType.custom,
+      allowedExtensions: [extension],
+      bytes: Uint8List.fromList(bytes),
+    );
+    if (path != null) {
+      _showMessage('Exported $path');
+    }
+  }
+
+  String _titleFromFileName(String fileName) {
+    final withoutExtension = fileName.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    return withoutExtension.trim().isEmpty
+        ? 'Imported lecture'
+        : withoutExtension;
+  }
+
+  String _safeFileName(String title) {
+    final cleaned = title
+        .trim()
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-')
+        .replaceAll(RegExp(r'\s+'), ' ');
+    return cleaned.isEmpty ? 'lecture' : cleaned;
+  }
+
   void _refreshSearch() {
     final quillController = _quillController;
     final query = _searchController.text.trim();
@@ -1976,6 +2163,8 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onInsertVideo: _insertVideo,
               onInsertDrawing: _insertDrawing,
               onInsertLink: _insertLink,
+              onImportFile: _importLectureFile,
+              onExportFile: _exportLectureFile,
               onToggleFormatToolbar: () =>
                   setState(() => _showFormatToolbar = !_showFormatToolbar),
               onSearchChanged: (_) => _refreshSearch(),
@@ -2103,6 +2292,8 @@ class _NoteActionBar extends StatelessWidget {
     required this.onInsertVideo,
     required this.onInsertDrawing,
     required this.onInsertLink,
+    required this.onImportFile,
+    required this.onExportFile,
     required this.onToggleFormatToolbar,
     required this.onSearchChanged,
     required this.onSearchSubmitted,
@@ -2122,6 +2313,8 @@ class _NoteActionBar extends StatelessWidget {
   final VoidCallback onInsertVideo;
   final VoidCallback onInsertDrawing;
   final VoidCallback onInsertLink;
+  final VoidCallback onImportFile;
+  final VoidCallback onExportFile;
   final VoidCallback onToggleFormatToolbar;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
@@ -2210,6 +2403,21 @@ class _NoteActionBar extends StatelessWidget {
                       tooltip: 'Insert link',
                       onPressed: onInsertLink,
                       icon: Icons.link_rounded,
+                      size: 36,
+                      iconSize: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    _GlassIconButton(
+                      tooltip: 'Import txt, markdown, json, or leccy',
+                      onPressed: onImportFile,
+                      icon: Icons.upload_file_rounded,
+                      size: 36,
+                      iconSize: 18,
+                    ),
+                    _GlassIconButton(
+                      tooltip: 'Export lecture',
+                      onPressed: onExportFile,
+                      icon: Icons.download_rounded,
                       size: 36,
                       iconSize: 18,
                     ),
@@ -2441,6 +2649,43 @@ class _DrawingDialogState extends State<_DrawingDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+enum _ExportFormat { text, markdown, leccy }
+
+class _ExportDialog extends StatelessWidget {
+  const _ExportDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return SimpleDialog(
+      title: const Text('Export lecture'),
+      children: [
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(context).pop(_ExportFormat.text),
+          child: const ListTile(
+            leading: Icon(Icons.text_snippet_outlined),
+            title: Text('Plain text (.txt)'),
+          ),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(context).pop(_ExportFormat.markdown),
+          child: const ListTile(
+            leading: Icon(Icons.notes_rounded),
+            title: Text('Markdown text (.md)'),
+          ),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(context).pop(_ExportFormat.leccy),
+          child: const ListTile(
+            leading: Icon(Icons.inventory_2_outlined),
+            title: Text('Leccy package (.leccy)'),
+            subtitle: Text('Includes notes, sheet, slides, and flashcards'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3869,6 +4114,12 @@ class _LiquidWallpaper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fastMode = _FastModeScope.of(context);
+    if (fastMode) {
+      return ColoredBox(
+        color: isDark ? const Color(0xFF070A13) : const Color(0xFFE8DCC8),
+      );
+    }
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -3954,14 +4205,15 @@ class _GlassPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fastMode = _FastModeScope.of(context) || this.fastMode;
     return Padding(
       padding: padding,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
         child: BackdropFilter(
           filter: ImageFilter.blur(
-            sigmaX: fastMode ? 4 : 20,
-            sigmaY: fastMode ? 4 : 20,
+            sigmaX: fastMode ? 0 : 20,
+            sigmaY: fastMode ? 0 : 20,
           ),
           child: Container(
             decoration: BoxDecoration(
@@ -3983,7 +4235,7 @@ class _GlassPanel extends StatelessWidget {
                   color: isDark
                       ? const Color(0x44000000)
                       : const Color(0x110E1933),
-                  blurRadius: fastMode ? 8 : 32,
+                  blurRadius: fastMode ? 0 : 32,
                   spreadRadius: 0,
                   offset: const Offset(0, 8),
                 ),
@@ -4017,10 +4269,11 @@ class _LiquidGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fastMode = _FastModeScope.of(context);
     final baseTint = tint ?? Theme.of(context).colorScheme.primary;
     final radius = BorderRadius.circular(borderRadius);
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
+      duration: _motionDuration(context, 180),
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         borderRadius: radius,
@@ -4029,7 +4282,11 @@ class _LiquidGlass extends StatelessWidget {
             color: isDark
                 ? const Color(0x33000000)
                 : baseTint.withValues(alpha: selected ? 0.18 : 0.08),
-            blurRadius: selected ? 24 : 14,
+            blurRadius: fastMode
+                ? 0
+                : selected
+                ? 24
+                : 14,
             offset: const Offset(0, 8),
           ),
         ],
@@ -4037,7 +4294,10 @@ class _LiquidGlass extends StatelessWidget {
       child: ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          filter: ImageFilter.blur(
+            sigmaX: fastMode ? 0 : blur,
+            sigmaY: fastMode ? 0 : blur,
+          ),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
