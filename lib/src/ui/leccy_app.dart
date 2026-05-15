@@ -950,6 +950,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   final List<GeneratedFlashcard> _flashcards = [];
   _RestructureBackup? _lastRestructureBackup;
   bool _isApplyingFoldVisibility = false;
+  Color _activeMarkerColor = _markerColors.first;
 
   static const List<Color> _markerColors = [
     Color(0xFFFFF59D),
@@ -1301,6 +1302,14 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  void _applyActiveMarker() {
+    _applyHighlight(_activeMarkerColor);
+  }
+
+  void _setActiveMarkerColor(Color color) {
+    setState(() => _activeMarkerColor = color);
+  }
+
   void _clearHighlight() {
     final quillController = _quillController;
     if (quillController == null) {
@@ -1332,6 +1341,55 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _ => quill.Attribute.h3,
     };
     quillController.formatSelection(attribute);
+  }
+
+  static const List<String> _fontSizeOrder = [
+    'small',
+    'normal',
+    'large',
+    'huge',
+  ];
+
+  String _activeFontSize() {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return 'normal';
+    }
+    final raw = quillController
+        .getSelectionStyle()
+        .attributes[quill.Attribute.size.key]
+        ?.value;
+    final size = raw?.toString();
+    if (size == null || size.isEmpty || size == 'normal') {
+      return 'normal';
+    }
+    return _fontSizeOrder.contains(size) ? size : 'normal';
+  }
+
+  void _applyFontSize(String value) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    if (value == 'normal') {
+      quillController.formatSelection(
+        quill.Attribute.clone(quill.Attribute.size, null),
+      );
+    } else {
+      quillController.formatSelection(quill.SizeAttribute(value));
+    }
+    _scheduleSave();
+  }
+
+  void _stepFontSize(bool increase) {
+    final current = _activeFontSize();
+    final index = _fontSizeOrder.indexOf(current);
+    final safeIndex = index == -1 ? 1 : index;
+    final next = (safeIndex + (increase ? 1 : -1)).clamp(
+      0,
+      _fontSizeOrder.length - 1,
+    );
+    _applyFontSize(_fontSizeOrder[next]);
   }
 
   void _insertEmbed(quill.BlockEmbed embed) {
@@ -2304,13 +2362,19 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               controller: quillController,
               searchController: _searchController,
               markerColors: _markerColors,
+              activeMarkerColor: _activeMarkerColor,
+              activeFontSize: _activeFontSize(),
               showFormatToolbar: _showFormatToolbar,
               isRestructuring: _isRestructuring,
               searchLabel: _searchController.text.trim().isEmpty
                   ? ''
                   : '${_searchOffsets.isEmpty ? 0 : _activeSearchMatch + 1}/${_searchOffsets.length}',
               onHeadingSelected: _applyHeading,
-              onHighlight: _applyHighlight,
+              onHighlight: (_) => _applyActiveMarker(),
+              onMarkerColorSelected: _setActiveMarkerColor,
+              onFontSizeSelected: _applyFontSize,
+              onIncreaseFontSize: () => _stepFontSize(true),
+              onDecreaseFontSize: () => _stepFontSize(false),
               onClearHighlight: _clearHighlight,
               onInsertImage: _insertImage,
               onInsertVideo: _insertVideo,
@@ -2444,11 +2508,17 @@ class _NoteActionBar extends StatelessWidget {
     required this.controller,
     required this.searchController,
     required this.markerColors,
+    required this.activeMarkerColor,
+    required this.activeFontSize,
     required this.showFormatToolbar,
     required this.isRestructuring,
     required this.searchLabel,
     required this.onHeadingSelected,
     required this.onHighlight,
+    required this.onMarkerColorSelected,
+    required this.onFontSizeSelected,
+    required this.onIncreaseFontSize,
+    required this.onDecreaseFontSize,
     required this.onClearHighlight,
     required this.onInsertImage,
     required this.onInsertVideo,
@@ -2469,11 +2539,17 @@ class _NoteActionBar extends StatelessWidget {
   final quill.QuillController controller;
   final TextEditingController searchController;
   final List<Color> markerColors;
+  final Color activeMarkerColor;
+  final String activeFontSize;
   final bool showFormatToolbar;
   final bool isRestructuring;
   final String searchLabel;
   final ValueChanged<int?> onHeadingSelected;
   final ValueChanged<Color> onHighlight;
+  final ValueChanged<Color> onMarkerColorSelected;
+  final ValueChanged<String> onFontSizeSelected;
+  final VoidCallback onIncreaseFontSize;
+  final VoidCallback onDecreaseFontSize;
   final VoidCallback onClearHighlight;
   final VoidCallback onInsertImage;
   final VoidCallback onInsertVideo;
@@ -2530,21 +2606,38 @@ class _NoteActionBar extends StatelessWidget {
                       },
                     ),
                     const SizedBox(width: 10),
-                    for (var i = 0; i < markerColors.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: _GlassIconButton(
-                          tooltip: 'Marker ${i + 1}',
-                          onPressed: () => onHighlight(markerColors[i]),
-                          icon: Icons.draw_rounded,
-                          size: 36,
-                          iconSize: 18,
-                        ),
-                      ),
+                    _MarkerPickerButton(
+                      colors: markerColors,
+                      activeColor: activeMarkerColor,
+                      onPick: onMarkerColorSelected,
+                    ),
+                    const SizedBox(width: 4),
+                    _GlassIconButton(
+                      tooltip: 'Apply marker',
+                      onPressed: () => onHighlight(activeMarkerColor),
+                      icon: Icons.draw_rounded,
+                      size: 36,
+                      iconSize: 18,
+                    ),
                     IconButton(
                       tooltip: 'Clear marker',
                       onPressed: onClearHighlight,
                       icon: const Icon(Icons.format_color_reset_rounded),
+                    ),
+                    const SizedBox(width: 8),
+                    _FontStepButton(
+                      tooltip: 'Smaller text',
+                      label: 'A-',
+                      onPressed: onDecreaseFontSize,
+                    ),
+                    _FontSizePicker(
+                      value: activeFontSize,
+                      onSelected: onFontSizeSelected,
+                    ),
+                    _FontStepButton(
+                      tooltip: 'Bigger text',
+                      label: 'A+',
+                      onPressed: onIncreaseFontSize,
                     ),
                     const SizedBox(width: 8),
                     _GlassIconButton(
@@ -2666,6 +2759,144 @@ class _NoteActionBar extends StatelessWidget {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MarkerPickerButton extends StatelessWidget {
+  const _MarkerPickerButton({
+    required this.colors,
+    required this.activeColor,
+    required this.onPick,
+  });
+
+  final List<Color> colors;
+  final Color activeColor;
+  final ValueChanged<Color> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<Color>(
+      tooltip: 'Marker color',
+      onSelected: onPick,
+      itemBuilder: (context) => [
+        for (final color in colors)
+          PopupMenuItem<Color>(
+            value: color,
+            child: Row(
+              children: [
+                Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '#${(color.toARGB32() & 0x00FFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: _LiquidGlass(
+        borderRadius: 18,
+        blur: 10,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.color_lens_outlined, size: 16),
+            const SizedBox(width: 6),
+            Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: activeColor,
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.expand_more_rounded, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FontSizePicker extends StatelessWidget {
+  const _FontSizePicker({required this.value, required this.onSelected});
+
+  final String value;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'Font size',
+      onSelected: onSelected,
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'small', child: Text('Small')),
+        PopupMenuItem(value: 'normal', child: Text('Normal')),
+        PopupMenuItem(value: 'large', child: Text('Large')),
+        PopupMenuItem(value: 'huge', child: Text('Huge')),
+      ],
+      child: _LiquidGlass(
+        borderRadius: 18,
+        blur: 10,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(switch (value) {
+              'small' => 'Small',
+              'large' => 'Large',
+              'huge' => 'Huge',
+              _ => 'Normal',
+            }, style: Theme.of(context).textTheme.labelMedium),
+            const SizedBox(width: 4),
+            const Icon(Icons.expand_more_rounded, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FontStepButton extends StatelessWidget {
+  const _FontStepButton({
+    required this.tooltip,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: _LiquidGlass(
+        borderRadius: 18,
+        blur: 10,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(18),
+          child: Text(label, style: Theme.of(context).textTheme.labelLarge),
         ),
       ),
     );
