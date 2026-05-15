@@ -51,6 +51,8 @@ dependencies:
   http: ^1.6.0
   archive: ^4.0.9
   xml: ^6.6.1
+  record: ^6.2.0
+  audioplayers: ^6.6.0
 
 dev_dependencies:
   flutter_test:

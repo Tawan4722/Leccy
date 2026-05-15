@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_drawing_board/flutter_drawing_board.dart' as drawing;
@@ -13,16 +14,21 @@ import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../data/leccy_store.dart';
 import '../domain/gemini_service.dart';
 import '../domain/models.dart';
 import '../domain/pptx_export_service.dart';
 import 'app_controller.dart';
 import 'cover_image_provider.dart'
     if (dart.library.io) 'cover_image_provider_io.dart';
+import 'voice_recording_target.dart'
+    if (dart.library.io) 'voice_recording_target_io.dart';
 
 const String leccyFoldHiddenAttributeKey = 'leccy-fold-hidden';
+const String leccyAudioEmbedType = 'leccy-audio';
 const String _foldHeadingLevelAttributeKey = 'leccy-fold-heading-level';
 const String _quillListAttributeKey = 'list';
 const String _foldLeadingListValue = 'leccy-fold-leading';
@@ -1432,6 +1438,28 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _insertEmbed(quill.BlockEmbed.image(imagePath));
   }
 
+  Future<void> _recordVoiceNote() async {
+    final path = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) =>
+          _VoiceRecorderDialog(repository: widget.controller.repository),
+    );
+    if (path == null || path.trim().isEmpty) {
+      return;
+    }
+    final label = intl.DateFormat('MMM d, HH:mm').format(DateTime.now());
+    _insertEmbed(
+      quill.BlockEmbed.custom(
+        quill.CustomBlockEmbed(
+          leccyAudioEmbedType,
+          jsonEncode({'source': path, 'label': 'Voice note $label'}),
+        ),
+      ),
+    );
+    _showMessage('Inserted voice note.');
+  }
+
   Future<void> _importLectureFile() async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -2288,6 +2316,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onInsertVideo: _insertVideo,
               onInsertDrawing: _insertDrawing,
               onInsertLink: _insertLink,
+              onRecordVoice: _recordVoiceNote,
               onImportFile: _importLectureFile,
               onExportFile: _exportLectureFile,
               onRestructure: _restructureWithGemini,
@@ -2332,8 +2361,10 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                 config: quill.QuillEditorConfig(
                                   placeholder: 'Write the lecture note here...',
                                   padding: EdgeInsets.zero,
-                                  embedBuilders:
-                                      FlutterQuillEmbeds.defaultEditorBuilders(),
+                                  embedBuilders: [
+                                    ...FlutterQuillEmbeds.defaultEditorBuilders(),
+                                    _AudioEmbedBuilder(),
+                                  ],
                                   // ignore: experimental_member_use
                                   customLeadingBlockBuilder: _buildFoldLeading,
                                   customStyleBuilder: _foldStyle,
@@ -2423,6 +2454,7 @@ class _NoteActionBar extends StatelessWidget {
     required this.onInsertVideo,
     required this.onInsertDrawing,
     required this.onInsertLink,
+    required this.onRecordVoice,
     required this.onImportFile,
     required this.onExportFile,
     required this.onRestructure,
@@ -2447,6 +2479,7 @@ class _NoteActionBar extends StatelessWidget {
   final VoidCallback onInsertVideo;
   final VoidCallback onInsertDrawing;
   final VoidCallback onInsertLink;
+  final VoidCallback onRecordVoice;
   final VoidCallback onImportFile;
   final VoidCallback onExportFile;
   final VoidCallback onRestructure;
@@ -2539,6 +2572,13 @@ class _NoteActionBar extends StatelessWidget {
                       tooltip: 'Insert link',
                       onPressed: onInsertLink,
                       icon: Icons.link_rounded,
+                      size: 36,
+                      iconSize: 18,
+                    ),
+                    _GlassIconButton(
+                      tooltip: 'Record voice',
+                      onPressed: onRecordVoice,
+                      icon: Icons.mic_rounded,
                       size: 36,
                       iconSize: 18,
                     ),
@@ -2852,6 +2892,304 @@ class _ExportDialog extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _VoiceRecorderDialog extends StatefulWidget {
+  const _VoiceRecorderDialog({required this.repository});
+
+  final LeccyStore repository;
+
+  @override
+  State<_VoiceRecorderDialog> createState() => _VoiceRecorderDialogState();
+}
+
+class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
+  final AudioRecorder _recorder = AudioRecorder();
+  Timer? _timer;
+  bool _isRecording = false;
+  bool _isSaving = false;
+  Duration _elapsed = Duration.zero;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _recorder.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    final allowed = await _recorder.hasPermission();
+    if (!allowed) {
+      _showLocalMessage('Microphone permission was denied.');
+      return;
+    }
+    final path = await buildVoiceRecordingPath('wav');
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.wav),
+      path: path,
+    );
+    setState(() {
+      _isRecording = true;
+      _elapsed = Duration.zero;
+    });
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() => _elapsed += const Duration(seconds: 1));
+      }
+    });
+  }
+
+  Future<void> _stopAndInsert() async {
+    setState(() => _isSaving = true);
+    _timer?.cancel();
+    final path = await _recorder.stop();
+    if (path == null || path.isEmpty) {
+      _showLocalMessage('No recording was saved.');
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _isRecording = false;
+        });
+      }
+      return;
+    }
+    final storedPath = await persistVoiceRecording(
+      repository: widget.repository,
+      path: path,
+      extension: 'wav',
+    );
+    if (mounted) {
+      Navigator.of(context).pop(storedPath);
+    }
+  }
+
+  Future<void> _cancel() async {
+    _timer?.cancel();
+    if (_isRecording) {
+      await _recorder.cancel();
+    }
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _showLocalMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  String _timeLabel(Duration value) {
+    final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Record voice note'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _isRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
+              size: 52,
+              color: _isRecording
+                  ? Theme.of(context).colorScheme.error
+                  : Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _timeLabel(_elapsed),
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _isRecording
+                  ? 'Recording. Press Insert when finished.'
+                  : 'Press Record and allow microphone access.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : _cancel,
+          child: const Text('Cancel'),
+        ),
+        if (!_isRecording)
+          FilledButton.icon(
+            onPressed: _isSaving ? null : _start,
+            icon: const Icon(Icons.fiber_manual_record_rounded),
+            label: const Text('Record'),
+          )
+        else
+          FilledButton.icon(
+            onPressed: _isSaving ? null : _stopAndInsert,
+            icon: const Icon(Icons.check_rounded),
+            label: Text(_isSaving ? 'Saving' : 'Insert'),
+          ),
+      ],
+    );
+  }
+}
+
+class _AudioEmbedBuilder extends quill.EmbedBuilder {
+  @override
+  String get key => leccyAudioEmbedType;
+
+  @override
+  bool get expanded => false;
+
+  @override
+  Widget build(BuildContext context, quill.EmbedContext embedContext) {
+    final data = _AudioEmbedData.fromRaw(embedContext.node.value.data);
+    return _AudioEmbedCard(data: data);
+  }
+}
+
+class _AudioEmbedData {
+  const _AudioEmbedData({required this.source, required this.label});
+
+  final String source;
+  final String label;
+
+  factory _AudioEmbedData.fromRaw(Object? raw) {
+    try {
+      final decoded = raw is String ? jsonDecode(raw) : raw;
+      if (decoded is Map) {
+        return _AudioEmbedData(
+          source: decoded['source']?.toString() ?? '',
+          label: decoded['label']?.toString() ?? 'Voice note',
+        );
+      }
+    } catch (_) {
+      // Fall through to raw string support.
+    }
+    return _AudioEmbedData(source: raw?.toString() ?? '', label: 'Voice note');
+  }
+}
+
+class _AudioEmbedCard extends StatefulWidget {
+  const _AudioEmbedCard({required this.data});
+
+  final _AudioEmbedData data;
+
+  @override
+  State<_AudioEmbedCard> createState() => _AudioEmbedCardState();
+}
+
+class _AudioEmbedCardState extends State<_AudioEmbedCard> {
+  late final AudioPlayer _player;
+  PlayerState _state = PlayerState.stopped;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = AudioPlayer();
+    _player.onPlayerStateChanged.listen((state) {
+      if (mounted) {
+        setState(() => _state = state);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    if (_state == PlayerState.playing) {
+      await _player.stop();
+      return;
+    }
+    final source = widget.data.source;
+    if (source.isEmpty) {
+      return;
+    }
+    if (source.startsWith('data:')) {
+      final comma = source.indexOf(',');
+      if (comma == -1) {
+        return;
+      }
+      final bytes = base64Decode(source.substring(comma + 1));
+      await _player.play(BytesSource(bytes, mimeType: 'audio/wav'));
+      return;
+    }
+    if (source.startsWith('http://') ||
+        source.startsWith('https://') ||
+        source.startsWith('blob:')) {
+      await _player.play(UrlSource(source));
+    } else {
+      await _player.play(DeviceFileSource(source));
+    }
+  }
+
+  Future<void> _openExternal() async {
+    final source = widget.data.source;
+    if (source.isEmpty || source.startsWith('data:')) {
+      return;
+    }
+    final uri = source.startsWith(RegExp(r'[a-zA-Z]+:'))
+        ? Uri.tryParse(source)
+        : Uri.file(source);
+    if (uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: _LiquidGlass(
+        borderRadius: 18,
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            _GlassIconButton(
+              tooltip: _state == PlayerState.playing ? 'Stop' : 'Play',
+              icon: _state == PlayerState.playing
+                  ? Icons.stop_rounded
+                  : Icons.play_arrow_rounded,
+              onPressed: _toggle,
+              selected: _state == PlayerState.playing,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.data.label,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  Text(
+                    'Voice recording',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Open audio file',
+              onPressed: widget.data.source.startsWith('data:')
+                  ? null
+                  : _openExternal,
+              icon: const Icon(Icons.open_in_new_rounded),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
