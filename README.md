@@ -1,62 +1,89 @@
 # Leccy
 
-Leccy is a modern, beautifully designed lecture and study organizer application built with Flutter. Originally developed as a Windows-first application, it embraces a fluid, glassmorphic UI to provide students and lifelong learners with an engaging, distraction-free environment for their studies.
+<div align="center">
+  <img src="assets/icon.png" width="150" alt="Leccy Logo">
+  <h3>The Modern, Offline-First Lecture & Study Organizer</h3>
+</div>
 
-## Features
+Leccy is a beautifully designed lecture and study organizer application built with Flutter. Originally developed as a Windows-first desktop application, it embraces a fluid, glassmorphic UI to provide students, researchers, and lifelong learners with an engaging, distraction-free environment for their studies. 
 
-- **Rich Text Editing:** Create comprehensive lecture notes using an advanced rich-text editor, complete with inline formatting, highlighting, and embedded content.
-- **Custom Folders & Organization:** Group your files into colorful, customizable folders. Assign specific badges and cover images to keep your workspace visually organized.
-- **Study Sets & Flashcards:** Quickly transform your notes into study sets or flashcards, enabling active recall and efficient review sessions.
-- **Progress Tracking:** Track your reading and study progress on individual files or entire folders.
-- **Data Visualizations:** Built-in table and graphing workspaces to handle complex datasets directly alongside your notes.
-- **Local & Private:** By default, Leccy uses local SQLite persistence, keeping all your study materials safely on your device.
+> **🎉 New Release!** Leccy is now easily installable on Windows via a standalone `.exe` setup installer!
 
-## Getting Started
+---
 
-### Prerequisites
+## ✨ Features
 
-To run or build Leccy, you will need the following tools:
+Leccy is packed with powerful features designed to help you organize, summarize, and study effectively:
 
-- [Flutter SDK](https://flutter.dev/docs/get-started/install)
+### 📚 Ultimate Organization
+- **Custom Folders:** Group your files into distinct folders. Customize them with vibrant colors, custom badges, and unique cover images.
+- **Intuitive Library:** Search, sort, and display your folders in grid or list views.
+- **Offline & Private:** By default, Leccy uses robust local SQLite persistence. All your study materials, notes, and metadata stay safely on your device—no internet connection required.
+
+### 📝 Rich Text Editing & Quick Notes
+- **Advanced Editor:** Create comprehensive lecture notes using a powerful rich-text editor (powered by Flutter Quill). Support for inline formatting, headers, and more.
+- **Quick Notes & Descriptions:** Add brief synopses or important "quick notes" to any file for fast reference.
+- **Fullscreen Mode:** Toggle fullscreen mode for a complete, distraction-free writing and reading experience.
+
+### 🧠 Smart Local Summaries
+- **Offline Summarization:** Automatically generate concise plain-text summaries of your long lecture notes. Leccy analyzes your text locally using sentence scoring and extraction—keeping your data entirely private without relying on external AI APIs.
+
+### 📊 Progress Tracking
+- **Granular Progress:** Use interactive sliders and markers to track your reading and study progress on individual files.
+- **Folder Overviews:** Automatically calculate and display the average progress across all files within a specific folder.
+
+### 🎓 Study Sets & Flashcards
+- **Curated Study Sets:** Group important lecture files into dedicated "Study Sets" for targeted exam prep.
+- **Flashcard Workspace:** Quickly transform your notes into a flashcard-oriented interface, enabling active recall and efficient review sessions.
+- **Marker Tracking:** Save exact study progress markers for individual items within your study sets.
+
+### 📈 Data Visualization Workspaces
+- **Built-in Tables & Graphs:** Need to handle data? Switch to the data workspace to manage tables and visualize complex datasets with custom graph painters directly alongside your notes.
+
+### 🎨 Stunning Aesthetics
+- **Glassmorphic UI:** Enjoy a premium, modern design featuring subtle glass effects, liquid wallpapers, and responsive animations.
+- **Theming:** Customize your experience with different font presets, accent colors, and editor paper backgrounds. A dedicated "Fast Mode" is also available to disable complex visual effects on lower-end hardware.
+
+---
+
+## 🚀 Installation & Setup
+
+### 📦 Install via Windows Setup (.exe)
+
+The easiest way to get Leccy on Windows is to compile the included installer:
+
+1. Download and install [Inno Setup Compiler](https://jrsoftware.org/isdl.php).
+2. Open the `LeccyInstaller.iss` file located in the root of this project.
+3. Click **Compile** (or press `Ctrl+F9`).
+4. The Inno Setup compiler will generate a fully standalone setup executable (`LeccySetup.exe`) inside the newly created `Output/` folder.
+5. Run `LeccySetup.exe` to install the app and create your desktop shortcuts!
+
+### 🛠️ Building from Source
+
+To run or build Leccy manually, you will need the following tools:
+
+- [Flutter SDK](https://flutter.dev/docs/get-started/install) (Dart SDK ^3.11.5)
 - Windows Developer Mode enabled
 - Visual Studio (with "Desktop development with C++" workload)
 
-### Running Locally
-
-To run the application in development mode:
-
+**To run the application in development mode:**
 ```powershell
 flutter run -d windows
 ```
+*(Note: Chrome preview is supported via `flutter run -d chrome` for UI testing, but uses volatile in-memory storage. Any data created in Chrome will reset when the browser restarts.)*
 
-*(Note: Chrome preview is supported for UI testing, but uses in-memory storage. Any data created in Chrome will reset when the browser restarts.)*
-
-## Building for Production
-
-### Windows Binary
-
-To build a release executable for Windows:
-
+**To build a production Windows release binary:**
 ```powershell
 flutter build windows --release
 ```
+The compiled source files will be located at `build/windows/x64/runner/Release/`.
 
-The compiled files will be located at `build/windows/x64/runner/Release/`.
+---
 
-### Windows Installer (Inno Setup)
+## 🤝 Contributing
 
-You can easily generate a complete setup executable for distribution using Inno Setup.
+Pull requests are welcome! If you want to make major changes or introduce new features, please open an issue first to discuss what you would like to change. 
 
-1. Install [Inno Setup](https://jrsoftware.org/isdl.php).
-2. Ensure you have built the Windows release executable using the command above.
-3. Open `LeccyInstaller.iss` in the Inno Setup IDE.
-4. Click **Compile** (or press Ctrl+F9).
-5. The installer will be generated in the `Output/` directory.
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
-## License
+## 📜 License
 
 This project is licensed under the terms described in the `LICENSE` file.
