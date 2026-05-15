@@ -69,6 +69,9 @@ class LectureFile {
     required this.description,
     required this.contentJson,
     required this.quickNote,
+    required this.sheetJson,
+    required this.slidesJson,
+    required this.flashcardsJson,
     required this.progressPercent,
     required this.updatedAt,
     required this.autoSummaryEnabled,
@@ -82,6 +85,9 @@ class LectureFile {
   final String description;
   final String contentJson;
   final String quickNote;
+  final String sheetJson;
+  final String slidesJson;
+  final String flashcardsJson;
   final int progressPercent;
   final DateTime updatedAt;
   final bool autoSummaryEnabled;
@@ -94,6 +100,28 @@ class LectureFile {
     ]);
   }
 
+  static String emptySheetJson() {
+    return jsonEncode({
+      'columns': ['A', 'B', 'C'],
+      'rows': [
+        ['', '', ''],
+        ['', '', ''],
+        ['', '', ''],
+      ],
+      'chartType': 'bar',
+      'labelColumn': 0,
+      'valueColumn': 1,
+    });
+  }
+
+  static String emptySlidesJson() {
+    return jsonEncode({'slides': <Map<String, Object?>>[]});
+  }
+
+  static String emptyFlashcardsJson() {
+    return jsonEncode({'cards': <Map<String, Object?>>[]});
+  }
+
   LectureFile copyWith({
     int? id,
     int? folderId,
@@ -101,6 +129,9 @@ class LectureFile {
     String? description,
     String? contentJson,
     String? quickNote,
+    String? sheetJson,
+    String? slidesJson,
+    String? flashcardsJson,
     int? progressPercent,
     DateTime? updatedAt,
     bool? autoSummaryEnabled,
@@ -116,6 +147,9 @@ class LectureFile {
       description: description ?? this.description,
       contentJson: contentJson ?? this.contentJson,
       quickNote: quickNote ?? this.quickNote,
+      sheetJson: sheetJson ?? this.sheetJson,
+      slidesJson: slidesJson ?? this.slidesJson,
+      flashcardsJson: flashcardsJson ?? this.flashcardsJson,
       progressPercent: progressPercent ?? this.progressPercent,
       updatedAt: updatedAt ?? this.updatedAt,
       autoSummaryEnabled: autoSummaryEnabled ?? this.autoSummaryEnabled,
@@ -136,6 +170,10 @@ class LectureFile {
       description: map['description'] as String,
       contentJson: map['content_json'] as String,
       quickNote: map['quick_note'] as String,
+      sheetJson: map['sheet_json'] as String? ?? emptySheetJson(),
+      slidesJson: map['slides_json'] as String? ?? emptySlidesJson(),
+      flashcardsJson:
+          map['flashcards_json'] as String? ?? emptyFlashcardsJson(),
       progressPercent: map['progress_percent'] as int,
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
       autoSummaryEnabled: (map['auto_summary_enabled'] as int? ?? 0) == 1,
@@ -156,6 +194,9 @@ class LectureFile {
       'description': description,
       'content_json': contentJson,
       'quick_note': quickNote,
+      'sheet_json': sheetJson,
+      'slides_json': slidesJson,
+      'flashcards_json': flashcardsJson,
       'progress_percent': progressPercent.clamp(0, 100),
       'updated_at': updatedAt.millisecondsSinceEpoch,
       'auto_summary_enabled': autoSummaryEnabled ? 1 : 0,

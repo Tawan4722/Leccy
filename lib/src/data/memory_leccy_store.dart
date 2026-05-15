@@ -91,6 +91,9 @@ class MemoryLeccyStore implements LeccyStore {
       description: '',
       contentJson: LectureFile.emptyDocumentJson(),
       quickNote: '',
+      sheetJson: LectureFile.emptySheetJson(),
+      slidesJson: LectureFile.emptySlidesJson(),
+      flashcardsJson: LectureFile.emptyFlashcardsJson(),
       progressPercent: 0,
       updatedAt: DateTime.now(),
       autoSummaryEnabled: false,
@@ -178,9 +181,24 @@ class MemoryLeccyStore implements LeccyStore {
     required Uint8List bytes,
     required String extension,
   }) async {
+    return saveAttachment(
+      bytes: bytes,
+      extension: extension,
+      mediaType: 'image',
+    );
+  }
+
+  @override
+  Future<String> saveAttachment({
+    required Uint8List bytes,
+    required String extension,
+    required String mediaType,
+  }) async {
     final cleanExtension = extension.replaceAll(RegExp('[^a-zA-Z0-9]'), '');
     final mimeExtension = cleanExtension.isEmpty ? 'png' : cleanExtension;
-    return 'data:image/$mimeExtension;base64,${base64Encode(bytes)}';
+    final cleanMediaType = mediaType.replaceAll(RegExp('[^a-zA-Z0-9]'), '');
+    final type = cleanMediaType.isEmpty ? 'application' : cleanMediaType;
+    return 'data:$type/$mimeExtension;base64,${base64Encode(bytes)}';
   }
 
   @override

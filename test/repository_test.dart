@@ -47,6 +47,9 @@ void main() {
     expect(files.single.title, 'Kinematics');
     expect(files.single.description, 'Vectors and velocity');
     expect(files.single.quickNote, 'Reviewed examples');
+    expect(files.single.sheetJson, isNotEmpty);
+    expect(files.single.slidesJson, isNotEmpty);
+    expect(files.single.flashcardsJson, isNotEmpty);
     expect(counts[folder.id], 1);
     expect(progress[folder.id], 40);
   });

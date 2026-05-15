@@ -43,9 +43,11 @@ class AppController extends ChangeNotifier {
   bool showLeftPane = true;
   bool showRightPane = true;
   bool editorFullscreen = false;
+  bool fileSelectionMode = false;
   double leftPaneWidth = 330;
   double rightPaneWidth = 320;
   bool? _fastModeBeforeFullscreen;
+  int _folderLoadGeneration = 0;
 
   List<LectureFolder> folders = [];
   List<LectureFile> files = [];
@@ -133,12 +135,21 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _loadFolderContent(int folderId) async {
-    files = await repository.filesForFolder(folderId);
-    studySets = await repository.studySetsForFolder(folderId);
-    if (files.isNotEmpty) {
-      selectedFileId ??= files.first.id;
-      if (!files.any((file) => file.id == selectedFileId)) {
-        selectedFileId = files.first.id;
+    final generation = ++_folderLoadGeneration;
+    final loadedFiles = await repository.filesForFolder(folderId);
+    final loadedStudySets = await repository.studySetsForFolder(folderId);
+    if (generation != _folderLoadGeneration || folderId != selectedFolderId) {
+      return;
+    }
+    files = loadedFiles;
+    studySets = loadedStudySets;
+    selectedFileIds.removeWhere(
+      (fileId) => !files.any((file) => file.id == fileId),
+    );
+    if (loadedFiles.isNotEmpty) {
+      selectedFileId ??= loadedFiles.first.id;
+      if (!loadedFiles.any((file) => file.id == selectedFileId)) {
+        selectedFileId = loadedFiles.first.id;
       }
     } else {
       selectedFileId = null;
@@ -151,11 +162,16 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> selectFolder(int folderId) async {
+    if (selectedFolderId == folderId) {
+      return;
+    }
     selectedFolderId = folderId;
     selectedFileId = null;
     activeStudySetId = null;
     selectedFileIds.clear();
+    fileSelectionMode = false;
     activeStudySetItems = [];
+    notifyListeners();
     await _loadFolderContent(folderId);
     notifyListeners();
   }
@@ -326,6 +342,9 @@ class AppController extends ChangeNotifier {
     String? description,
     String? quickNote,
     String? contentJson,
+    String? sheetJson,
+    String? slidesJson,
+    String? flashcardsJson,
     int? progressPercent,
   }) async {
     final file = selectedFile;
@@ -338,6 +357,9 @@ class AppController extends ChangeNotifier {
         description: description,
         quickNote: quickNote,
         contentJson: contentJson,
+        sheetJson: sheetJson,
+        slidesJson: slidesJson,
+        flashcardsJson: flashcardsJson,
         progressPercent: progressPercent,
       ),
     );
@@ -436,11 +458,27 @@ class AppController extends ChangeNotifier {
   }
 
   void selectFile(int fileId) {
+    if (fileSelectionMode) {
+      toggleFileSelection(fileId);
+      return;
+    }
+    if (!files.any((file) => file.id == fileId) || selectedFileId == fileId) {
+      return;
+    }
     selectedFileId = fileId;
     notifyListeners();
   }
 
+  void setFileSelectionMode(bool value) {
+    fileSelectionMode = value;
+    if (!value) {
+      selectedFileIds.clear();
+    }
+    notifyListeners();
+  }
+
   void toggleFileSelection(int fileId) {
+    fileSelectionMode = true;
     if (selectedFileIds.contains(fileId)) {
       selectedFileIds.remove(fileId);
     } else {
@@ -461,6 +499,7 @@ class AppController extends ChangeNotifier {
       files: chosenFiles,
     );
     selectedFileIds.clear();
+    fileSelectionMode = false;
     await refreshFolderContent(keepSelection: true);
     await selectStudySet(set.id);
   }

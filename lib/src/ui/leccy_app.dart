@@ -1,18 +1,23 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_drawing_board/flutter_drawing_board.dart' as drawing;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
+import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../domain/gemini_service.dart';
 import '../domain/models.dart';
+import '../domain/pptx_export_service.dart';
 import 'app_controller.dart';
 import 'cover_image_provider.dart'
     if (dart.library.io) 'cover_image_provider_io.dart';
@@ -719,8 +724,24 @@ class FileListPanel extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
+                  tooltip: controller.fileSelectionMode
+                      ? 'Exit selection mode'
+                      : 'Select lectures',
+                  onPressed: () => controller.setFileSelectionMode(
+                    !controller.fileSelectionMode,
+                  ),
+                  icon: Icon(
+                    controller.fileSelectionMode
+                        ? Icons.close_rounded
+                        : Icons.checklist_rounded,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
                   tooltip: 'Create progress set',
-                  onPressed: controller.selectedFileIds.isEmpty
+                  onPressed:
+                      !controller.fileSelectionMode ||
+                          controller.selectedFileIds.isEmpty
                       ? null
                       : controller.createStudySetFromSelection,
                   icon: const Icon(Icons.timeline_rounded),
@@ -736,24 +757,33 @@ class FileListPanel extends StatelessWidget {
                       actionLabel: 'Create file',
                       onAction: controller.createFile,
                     )
-                  : ListView.separated(
-                      itemCount: files.length,
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final file = files[index];
-                        final selected = controller.selectedFileId == file.id;
-                        return FileTile(
-                          file: file,
-                          isSelected: selected,
-                          isChecked: controller.selectedFileIds.contains(
-                            file.id,
-                          ),
-                          onTap: () => controller.selectFile(file.id),
-                          onCheck: () =>
-                              controller.toggleFileSelection(file.id),
-                        );
-                      },
+                  : AnimatedSwitcher(
+                      duration: Duration(
+                        milliseconds: controller.fastMode ? 120 : 260,
+                      ),
+                      child: ListView.separated(
+                        key: ValueKey(
+                          '${folder.id}-${files.length}-${controller.fileSelectionMode}',
+                        ),
+                        itemCount: files.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final file = files[index];
+                          final selected = controller.selectedFileId == file.id;
+                          return FileTile(
+                            file: file,
+                            isSelected: selected,
+                            isChecked: controller.selectedFileIds.contains(
+                              file.id,
+                            ),
+                            selectionMode: controller.fileSelectionMode,
+                            onTap: () => controller.selectFile(file.id),
+                            onCheck: () =>
+                                controller.toggleFileSelection(file.id),
+                          );
+                        },
+                      ),
                     ),
             ),
           ],
@@ -769,6 +799,7 @@ class FileTile extends StatelessWidget {
     required this.file,
     required this.isSelected,
     required this.isChecked,
+    required this.selectionMode,
     required this.onTap,
     required this.onCheck,
   });
@@ -776,59 +807,91 @@ class FileTile extends StatelessWidget {
   final LectureFile file;
   final bool isSelected;
   final bool isChecked;
+  final bool selectionMode;
   final VoidCallback onTap;
   final VoidCallback onCheck;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Card(
-      color: isSelected
-          ? Theme.of(context).colorScheme.primaryContainer
-          : (isDark ? const Color(0x292D3748) : Colors.white),
-      child: InkWell(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: isSelected
+            ? Theme.of(context).colorScheme.primaryContainer
+            : (isDark ? const Color(0x292D3748) : Colors.white),
         borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Checkbox(value: isChecked, onChanged: (_) => onCheck()),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      file.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      file.description.isEmpty
-                          ? 'No description'
-                          : file.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: LinearProgressIndicator(
-                        minHeight: 7,
-                        value: file.progressPercent / 100,
-                      ),
-                    ),
-                  ],
+        border: Border.all(
+          color: isSelected
+              ? Theme.of(context).colorScheme.primary
+              : Colors.transparent,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          onLongPress: onCheck,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  child: selectionMode
+                      ? Checkbox(
+                          key: const ValueKey('checkbox'),
+                          value: isChecked,
+                          onChanged: (_) => onCheck(),
+                        )
+                      : Icon(
+                          key: const ValueKey('lecture-icon'),
+                          isSelected
+                              ? Icons.radio_button_checked_rounded
+                              : Icons.article_outlined,
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text('${file.progressPercent}%'),
-            ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        file.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        file.description.isEmpty
+                            ? 'No description'
+                            : file.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: LinearProgressIndicator(
+                          minHeight: 7,
+                          value: file.progressPercent / 100,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('${file.progressPercent}%'),
+              ],
+            ),
           ),
         ),
       ),
@@ -856,9 +919,12 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Timer? _autoSummaryTimer;
   Timer? _foldVisibilityTimer;
   int? _boundFileId;
+  final _geminiService = GeminiService();
+  final _pptxExportService = PptxExportService();
   final ValueNotifier<bool> _isSaving = ValueNotifier(false);
   final ValueNotifier<bool> _hasPendingChanges = ValueNotifier(false);
   bool _isSummarizing = false;
+  bool _isGeneratingWorkspace = false;
   bool _showOutline = false;
   bool _showFlashAnswer = false;
   bool _showFormatToolbar = false;
@@ -867,7 +933,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   int _activeSearchMatch = 0;
   int _flashcardIndex = 0;
   final Set<int> _collapsedSectionOffsets = {};
-  final List<_FlashCardItem> _flashcards = [];
+  final List<GeneratedFlashcard> _flashcards = [];
   bool _isApplyingFoldVisibility = false;
 
   static const List<Color> _markerColors = [
@@ -907,6 +973,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _quickNoteController.dispose();
     _searchController.dispose();
     _quillController?.dispose();
+    _geminiService.close();
     _isSaving.dispose();
     _hasPendingChanges.dispose();
     super.dispose();
@@ -1252,6 +1319,110 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     quillController.formatSelection(attribute);
   }
 
+  void _insertEmbed(quill.BlockEmbed embed) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final selection = quillController.selection;
+    final index = selection.baseOffset < 0 ? 0 : selection.baseOffset;
+    final length = selection.extentOffset > selection.baseOffset
+        ? selection.extentOffset - selection.baseOffset
+        : 0;
+    quillController
+      ..skipRequestKeyboard = true
+      ..replaceText(index, length, embed, null)
+      ..moveCursorToPosition(index + 1);
+    _scheduleSave();
+  }
+
+  Future<void> _insertPickedMedia({
+    required FileType type,
+    required String mediaType,
+    required quill.BlockEmbed Function(String path) embedBuilder,
+  }) async {
+    final result = await FilePicker.pickFiles(type: type, withData: true);
+    final file = result?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) {
+      return;
+    }
+    final path = await widget.controller.repository.saveAttachment(
+      bytes: bytes,
+      extension: file.extension ?? (mediaType == 'videos' ? 'mp4' : 'png'),
+      mediaType: mediaType,
+    );
+    _insertEmbed(embedBuilder(path));
+  }
+
+  Future<void> _insertImage() async {
+    await _insertPickedMedia(
+      type: FileType.image,
+      mediaType: 'images',
+      embedBuilder: quill.BlockEmbed.image,
+    );
+  }
+
+  Future<void> _insertVideo() async {
+    await _insertPickedMedia(
+      type: FileType.video,
+      mediaType: 'videos',
+      embedBuilder: quill.BlockEmbed.video,
+    );
+  }
+
+  Future<void> _insertLink() async {
+    final link = await showDialog<_LinkDraft>(
+      context: context,
+      builder: (context) => const _LinkDialog(),
+    );
+    if (link == null || link.url.trim().isEmpty) {
+      return;
+    }
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final selection = quillController.selection;
+    if (selection.start >= 0 && selection.end > selection.start) {
+      quillController.formatSelection(quill.LinkAttribute(link.url.trim()));
+    } else {
+      final text = link.label.trim().isEmpty
+          ? link.url.trim()
+          : link.label.trim();
+      final index = selection.baseOffset < 0 ? 0 : selection.baseOffset;
+      quillController.replaceText(index, 0, text, null);
+      quillController.formatText(
+        index,
+        text.length,
+        quill.LinkAttribute(link.url.trim()),
+      );
+      quillController.moveCursorToPosition(index + text.length);
+    }
+    _scheduleSave();
+  }
+
+  Future<void> _insertDrawing() async {
+    final drawingData = await showDialog<_DrawingResult>(
+      context: context,
+      builder: (context) => const _DrawingDialog(),
+    );
+    if (drawingData == null) {
+      return;
+    }
+    final imagePath = await widget.controller.repository.saveAttachment(
+      bytes: drawingData.pngBytes,
+      extension: 'png',
+      mediaType: 'drawings',
+    );
+    await widget.controller.repository.saveAttachment(
+      bytes: Uint8List.fromList(utf8.encode(jsonEncode(drawingData.json))),
+      extension: 'json',
+      mediaType: 'drawings',
+    );
+    _insertEmbed(quill.BlockEmbed.image(imagePath));
+  }
+
   void _refreshSearch() {
     final quillController = _quillController;
     final query = _searchController.text.trim();
@@ -1391,87 +1562,145 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return sections;
   }
 
-  void _generateFlashcards() {
-    if (!widget.controller.hasApiKey) {
+  List<GeneratedFlashcard> _flashcardsFromFile(LectureFile file) {
+    try {
+      final decoded = jsonDecode(file.flashcardsJson);
+      final cards = decoded is Map ? decoded['cards'] : null;
+      if (cards is! List) {
+        return const [];
+      }
+      return cards
+          .whereType<Map>()
+          .map(
+            (item) => GeneratedFlashcard.fromJson(item.cast<String, Object?>()),
+          )
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _generateSlides() async {
+    final file = widget.controller.selectedFile;
+    if (file == null || _isGeneratingWorkspace) {
       return;
     }
     final text = _currentNotePlainText().trim();
     if (text.isEmpty) {
+      _showMessage('Write notes first, then generate slides.');
+      return;
+    }
+    setState(() => _isGeneratingWorkspace = true);
+    try {
+      final slides = await _geminiService.generateSlides(
+        apiKey: widget.controller.apiKey,
+        title: file.title,
+        noteText: text,
+      );
+      await widget.controller.updateSelectedFile(
+        slidesJson: _pptxExportService.slidesToJson(slides),
+      );
+      _showMessage('Generated ${slides.length} slides.');
+    } catch (error) {
+      _showMessage(error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingWorkspace = false);
+      }
+    }
+  }
+
+  Future<void> _exportSlides() async {
+    final file = widget.controller.selectedFile;
+    if (file == null) {
+      return;
+    }
+    final slides = _pptxExportService.slidesFromJson(file.slidesJson);
+    if (slides.isEmpty) {
+      _showMessage('Generate or add slides before exporting.');
+      return;
+    }
+    final bytes = _pptxExportService.buildDeck(
+      title: file.title,
+      slides: slides,
+    );
+    final path = await widget.controller.repository.saveAttachment(
+      bytes: bytes,
+      extension: 'pptx',
+      mediaType: 'exports',
+    );
+    _showMessage('Exported PowerPoint: $path');
+  }
+
+  Future<void> _generateFlashcards() async {
+    final file = widget.controller.selectedFile;
+    if (file == null || _isGeneratingWorkspace) {
+      return;
+    }
+    final text = _currentNotePlainText().trim();
+    if (text.isEmpty) {
+      _showMessage('Write notes first, then generate flashcards.');
+      return;
+    }
+    setState(() => _isGeneratingWorkspace = true);
+    try {
+      final cards = await _geminiService.generateFlashcards(
+        apiKey: widget.controller.apiKey,
+        title: file.title,
+        noteText: text,
+      );
+      await widget.controller.updateSelectedFile(
+        flashcardsJson: jsonEncode({
+          'cards': cards.map((card) => card.toJson()).toList(),
+        }),
+      );
       setState(() {
-        _flashcards
-          ..clear()
-          ..add(
-            const _FlashCardItem(
-              question: 'No notes yet',
-              answer: 'Write lecture notes first, then generate flashcards.',
-            ),
-          );
         _flashcardIndex = 0;
         _showFlashAnswer = false;
       });
+      _showMessage('Generated ${cards.length} flashcards.');
+    } catch (error) {
+      _showMessage(error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingWorkspace = false);
+      }
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) {
       return;
     }
-
-    final segments = text
-        .split(RegExp(r'[\n\.!?]+'))
-        .map((line) => line.trim())
-        .where((line) => line.length >= 18)
-        .take(20)
-        .toList();
-
-    final cards = <_FlashCardItem>[];
-    for (final segment in segments.take(12)) {
-      final words = segment
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
-      if (words.length < 3) {
-        continue;
-      }
-      final topic = words.take(6).join(' ');
-      cards.add(
-        _FlashCardItem(
-          question: 'What should you remember about "$topic"...?',
-          answer: segment,
-        ),
-      );
-    }
-
-    if (cards.isEmpty) {
-      cards.add(
-        const _FlashCardItem(
-          question: 'Not enough content',
-          answer: 'Add a bit more detail in your note to build flashcards.',
-        ),
-      );
-    }
-
-    setState(() {
-      _flashcards
-        ..clear()
-        ..addAll(cards);
-      _flashcardIndex = 0;
-      _showFlashAnswer = false;
-    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
   }
 
   void _nextFlashcard() {
-    if (_flashcards.isEmpty) {
+    final file = widget.controller.selectedFile;
+    final cards = file == null
+        ? const <GeneratedFlashcard>[]
+        : _flashcardsFromFile(file);
+    if (cards.isEmpty) {
       return;
     }
     setState(() {
-      _flashcardIndex = (_flashcardIndex + 1) % _flashcards.length;
+      _flashcardIndex = (_flashcardIndex + 1) % cards.length;
       _showFlashAnswer = false;
     });
   }
 
   void _previousFlashcard() {
-    if (_flashcards.isEmpty) {
+    final file = widget.controller.selectedFile;
+    final cards = file == null
+        ? const <GeneratedFlashcard>[]
+        : _flashcardsFromFile(file);
+    if (cards.isEmpty) {
       return;
     }
     setState(() {
-      _flashcardIndex =
-          (_flashcardIndex - 1 + _flashcards.length) % _flashcards.length;
+      _flashcardIndex = (_flashcardIndex - 1 + cards.length) % cards.length;
       _showFlashAnswer = false;
     });
   }
@@ -1647,12 +1876,12 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             icon: Icon(Icons.notes_rounded),
                           ),
                           ButtonSegment(
-                            value: EditorSurface.table,
+                            value: EditorSurface.sheet,
                             icon: Icon(Icons.table_chart_rounded),
                           ),
                           ButtonSegment(
-                            value: EditorSurface.graph,
-                            icon: Icon(Icons.bar_chart_rounded),
+                            value: EditorSurface.slides,
+                            icon: Icon(Icons.slideshow_rounded),
                           ),
                           ButtonSegment(
                             value: EditorSurface.flashcards,
@@ -1762,6 +1991,10 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onHeadingSelected: _applyHeading,
               onHighlight: _applyHighlight,
               onClearHighlight: _clearHighlight,
+              onInsertImage: _insertImage,
+              onInsertVideo: _insertVideo,
+              onInsertDrawing: _insertDrawing,
+              onInsertLink: _insertLink,
               onToggleFormatToolbar: () =>
                   setState(() => _showFormatToolbar = !_showFormatToolbar),
               onSearchChanged: (_) => _refreshSearch(),
@@ -1800,6 +2033,8 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                 config: quill.QuillEditorConfig(
                                   placeholder: 'Write the lecture note here...',
                                   padding: EdgeInsets.zero,
+                                  embedBuilders:
+                                      FlutterQuillEmbeds.defaultEditorBuilders(),
                                   // ignore: experimental_member_use
                                   customLeadingBlockBuilder: _buildFoldLeading,
                                   customStyleBuilder: _foldStyle,
@@ -1829,25 +2064,42 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ),
                       ],
                     )
+                  : _surface == EditorSurface.sheet
+                  ? _SheetGraphWorkspace(
+                      file: file,
+                      fastMode: widget.controller.fastMode,
+                      onChanged: (json) =>
+                          widget.controller.updateSelectedFile(sheetJson: json),
+                    )
+                  : _surface == EditorSurface.slides
+                  ? _SlidesWorkspace(
+                      file: file,
+                      isGenerating: _isGeneratingWorkspace,
+                      onGenerate: _generateSlides,
+                      onChanged: (json) => widget.controller.updateSelectedFile(
+                        slidesJson: json,
+                      ),
+                      onExport: _exportSlides,
+                    )
                   : _surface == EditorSurface.flashcards
                   ? _FlashcardWorkspace(
                       hasApiKey: widget.controller.hasApiKey,
                       apiKey: widget.controller.apiKey,
-                      cards: _flashcards,
+                      cards: _flashcardsFromFile(file),
                       index: _flashcardIndex,
                       showAnswer: _showFlashAnswer,
+                      isGenerating: _isGeneratingWorkspace,
                       onApiKeyChanged: widget.controller.setApiKey,
                       onGenerate: _generateFlashcards,
+                      onChanged: (json) => widget.controller.updateSelectedFile(
+                        flashcardsJson: json,
+                      ),
                       onToggleAnswer: () =>
                           setState(() => _showFlashAnswer = !_showFlashAnswer),
                       onPrevious: _previousFlashcard,
                       onNext: _nextFlashcard,
                     )
-                  : _FileDataWorkspace(
-                      fileId: file.id,
-                      mode: _surface,
-                      fastMode: widget.controller.fastMode,
-                    ),
+                  : const SizedBox.shrink(),
             ),
           ),
         ],
@@ -1866,6 +2118,10 @@ class _NoteActionBar extends StatelessWidget {
     required this.onHeadingSelected,
     required this.onHighlight,
     required this.onClearHighlight,
+    required this.onInsertImage,
+    required this.onInsertVideo,
+    required this.onInsertDrawing,
+    required this.onInsertLink,
     required this.onToggleFormatToolbar,
     required this.onSearchChanged,
     required this.onSearchSubmitted,
@@ -1881,6 +2137,10 @@ class _NoteActionBar extends StatelessWidget {
   final ValueChanged<int?> onHeadingSelected;
   final ValueChanged<Color> onHighlight;
   final VoidCallback onClearHighlight;
+  final VoidCallback onInsertImage;
+  final VoidCallback onInsertVideo;
+  final VoidCallback onInsertDrawing;
+  final VoidCallback onInsertLink;
   final VoidCallback onToggleFormatToolbar;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
@@ -1949,6 +2209,27 @@ class _NoteActionBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     IconButton.filledTonal(
+                      tooltip: 'Insert picture',
+                      onPressed: onInsertImage,
+                      icon: const Icon(Icons.image_outlined, size: 18),
+                    ),
+                    IconButton.filledTonal(
+                      tooltip: 'Insert video',
+                      onPressed: onInsertVideo,
+                      icon: const Icon(Icons.video_file_outlined, size: 18),
+                    ),
+                    IconButton.filledTonal(
+                      tooltip: 'Draw',
+                      onPressed: onInsertDrawing,
+                      icon: const Icon(Icons.gesture_rounded, size: 18),
+                    ),
+                    IconButton.filledTonal(
+                      tooltip: 'Insert link',
+                      onPressed: onInsertLink,
+                      icon: const Icon(Icons.link_rounded, size: 18),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
                       tooltip: showFormatToolbar
                           ? 'Hide formatting'
                           : 'Show formatting',
@@ -2001,6 +2282,179 @@ class _NoteActionBar extends StatelessWidget {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LinkDraft {
+  const _LinkDraft({required this.url, required this.label});
+
+  final String url;
+  final String label;
+}
+
+class _LinkDialog extends StatefulWidget {
+  const _LinkDialog();
+
+  @override
+  State<_LinkDialog> createState() => _LinkDialogState();
+}
+
+class _LinkDialogState extends State<_LinkDialog> {
+  final _urlController = TextEditingController();
+  final _labelController = TextEditingController();
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _labelController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Insert link'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _urlController,
+              decoration: const InputDecoration(
+                labelText: 'URL',
+                hintText: 'https://example.com',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _labelController,
+              decoration: const InputDecoration(labelText: 'Label'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            _LinkDraft(
+              url: _urlController.text.trim(),
+              label: _labelController.text.trim(),
+            ),
+          ),
+          child: const Text('Insert'),
+        ),
+      ],
+    );
+  }
+}
+
+class _DrawingResult {
+  const _DrawingResult({required this.pngBytes, required this.json});
+
+  final Uint8List pngBytes;
+  final List<Map<String, dynamic>> json;
+}
+
+class _DrawingDialog extends StatefulWidget {
+  const _DrawingDialog();
+
+  @override
+  State<_DrawingDialog> createState() => _DrawingDialogState();
+}
+
+class _DrawingDialogState extends State<_DrawingDialog> {
+  late final drawing.DrawingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = drawing.DrawingController()
+      ..setStyle(color: Colors.black, strokeWidth: 4);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _insert() async {
+    final image = await _controller.getImageData(
+      format: ImageByteFormat.png,
+      pixelRatio: 2,
+    );
+    if (image == null || !mounted) {
+      return;
+    }
+    Navigator.of(context).pop(
+      _DrawingResult(
+        pngBytes: image.buffer.asUint8List(),
+        json: _controller.getJsonList(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: SizedBox(
+        width: 900,
+        height: 680,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+              child: Row(
+                children: [
+                  Text(
+                    'Drawing',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(onPressed: _insert, child: const Text('Insert')),
+                ],
+              ),
+            ),
+            Expanded(
+              child: drawing.DrawingBoard(
+                controller: _controller,
+                background: Container(color: Colors.white),
+              ),
+            ),
+            drawing.DrawingBar(
+              controller: _controller,
+              tools: [
+                drawing.DefaultActionItem.slider(),
+                drawing.DefaultActionItem.undo(),
+                drawing.DefaultActionItem.redo(),
+                drawing.DefaultActionItem.turn(),
+                drawing.DefaultActionItem.clear(),
+              ],
+            ),
+            drawing.DrawingBar(
+              controller: _controller,
+              tools: [
+                drawing.DefaultToolItem.pen(),
+                drawing.DefaultToolItem.brush(),
+                drawing.DefaultToolItem.rectangle(),
+                drawing.DefaultToolItem.circle(),
+                drawing.DefaultToolItem.straightLine(),
+                drawing.DefaultToolItem.eraser(),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -2098,11 +2552,385 @@ class _DocumentOutlinePanel extends StatelessWidget {
   }
 }
 
-class _FlashCardItem {
-  const _FlashCardItem({required this.question, required this.answer});
+class _SheetGraphWorkspace extends StatefulWidget {
+  const _SheetGraphWorkspace({
+    required this.file,
+    required this.fastMode,
+    required this.onChanged,
+  });
 
-  final String question;
-  final String answer;
+  final LectureFile file;
+  final bool fastMode;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_SheetGraphWorkspace> createState() => _SheetGraphWorkspaceState();
+}
+
+class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
+  late List<List<String>> rows;
+  String chartType = 'bar';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SheetGraphWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.file.id != widget.file.id ||
+        oldWidget.file.sheetJson != widget.file.sheetJson) {
+      _load();
+    }
+  }
+
+  void _load() {
+    try {
+      final decoded = jsonDecode(widget.file.sheetJson);
+      final rawRows = decoded is Map ? decoded['rows'] : null;
+      rows = rawRows is List
+          ? rawRows
+                .map(
+                  (row) => row is List
+                      ? row.map((cell) => cell.toString()).toList()
+                      : <String>['', '', ''],
+                )
+                .toList()
+          : <List<String>>[];
+      chartType = decoded is Map
+          ? decoded['chartType']?.toString() ?? 'bar'
+          : 'bar';
+    } catch (_) {
+      rows = <List<String>>[];
+      chartType = 'bar';
+    }
+    if (rows.isEmpty) {
+      rows = List.generate(3, (_) => ['', '', '']);
+    }
+    for (final row in rows) {
+      while (row.length < 3) {
+        row.add('');
+      }
+    }
+  }
+
+  void _persist() {
+    widget.onChanged(
+      jsonEncode({
+        'columns': ['A', 'B', 'C'],
+        'rows': rows,
+        'chartType': chartType,
+        'labelColumn': 0,
+        'valueColumn': 1,
+      }),
+    );
+  }
+
+  double _valueFor(String raw) {
+    final value = raw.trim();
+    if (!value.startsWith('=')) {
+      return double.tryParse(value) ?? 0;
+    }
+    final expression = value.substring(1);
+    final parts = expression.split('+');
+    if (parts.length > 1) {
+      return parts.fold<double>(0, (sum, part) => sum + _cellValue(part));
+    }
+    return _cellValue(expression);
+  }
+
+  double _cellValue(String ref) {
+    final clean = ref.trim().toUpperCase();
+    if (clean.length < 2) {
+      return double.tryParse(clean) ?? 0;
+    }
+    final column = clean.codeUnitAt(0) - 'A'.codeUnitAt(0);
+    final row = int.tryParse(clean.substring(1));
+    if (row == null ||
+        row < 1 ||
+        row > rows.length ||
+        column < 0 ||
+        column >= rows[row - 1].length) {
+      return double.tryParse(clean) ?? 0;
+    }
+    return double.tryParse(rows[row - 1][column]) ?? 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final graphType = switch (chartType) {
+      'line' => _GraphType.line,
+      'pie' => _GraphType.pie,
+      _ => _GraphType.bar,
+    };
+    final points = [
+      for (var i = 0; i < rows.length; i++)
+        _DataPoint(
+          rows[i][0].trim().isEmpty ? 'Row ${i + 1}' : rows[i][0],
+          _valueFor(rows[i][1]),
+        ),
+    ];
+    final cleanPoints = points.where((point) => point.value > 0).toList();
+    final maxY = math.max(
+      10,
+      cleanPoints.fold<double>(0, (max, point) => math.max(max, point.value)),
+    );
+    return Row(
+      children: [
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Mini sheet',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Add row',
+                        onPressed: () {
+                          setState(() => rows.add(['', '', '']));
+                          _persist();
+                        },
+                        icon: const Icon(Icons.add_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: rows.length,
+                      itemBuilder: (context, rowIndex) {
+                        return Row(
+                          children: [
+                            SizedBox(width: 36, child: Text('${rowIndex + 1}')),
+                            for (var col = 0; col < 3; col++)
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(4),
+                                  child: TextFormField(
+                                    key: ValueKey(
+                                      '$rowIndex-$col-${rows[rowIndex][col]}',
+                                    ),
+                                    initialValue: rows[rowIndex][col],
+                                    decoration: InputDecoration(
+                                      hintText:
+                                          '${String.fromCharCode(65 + col)}${rowIndex + 1}',
+                                    ),
+                                    onChanged: (value) {
+                                      rows[rowIndex][col] = value;
+                                      _persist();
+                                      setState(() {});
+                                    },
+                                  ),
+                                ),
+                              ),
+                            IconButton(
+                              tooltip: 'Delete row',
+                              onPressed: rows.length == 1
+                                  ? null
+                                  : () {
+                                      setState(() => rows.removeAt(rowIndex));
+                                      _persist();
+                                    },
+                              icon: const Icon(Icons.delete_outline_rounded),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Graph',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const Spacer(),
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(
+                            value: 'bar',
+                            icon: Icon(Icons.bar_chart_rounded),
+                          ),
+                          ButtonSegment(
+                            value: 'line',
+                            icon: Icon(Icons.show_chart_rounded),
+                          ),
+                          ButtonSegment(
+                            value: 'pie',
+                            icon: Icon(Icons.pie_chart_rounded),
+                          ),
+                        ],
+                        selected: {chartType},
+                        onSelectionChanged: (value) {
+                          setState(() => chartType = value.first);
+                          _persist();
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: CustomPaint(
+                      painter: _GraphPainter(
+                        points: cleanPoints,
+                        maxY: maxY.toDouble(),
+                        color: Theme.of(context).colorScheme.primary,
+                        type: graphType,
+                        textColor: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SlidesWorkspace extends StatelessWidget {
+  const _SlidesWorkspace({
+    required this.file,
+    required this.isGenerating,
+    required this.onGenerate,
+    required this.onChanged,
+    required this.onExport,
+  });
+
+  final LectureFile file;
+  final bool isGenerating;
+  final VoidCallback onGenerate;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onExport;
+
+  List<GeneratedSlide> _slides() {
+    try {
+      final decoded = jsonDecode(file.slidesJson);
+      final slides = decoded is Map ? decoded['slides'] : null;
+      if (slides is! List) {
+        return const [];
+      }
+      return slides
+          .whereType<Map>()
+          .map((item) => GeneratedSlide.fromJson(item.cast<String, Object?>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _persist(List<GeneratedSlide> slides) {
+    onChanged(
+      jsonEncode({'slides': slides.map((slide) => slide.toJson()).toList()}),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slides = _slides();
+    return Column(
+      children: [
+        Row(
+          children: [
+            FilledButton.icon(
+              onPressed: isGenerating ? null : onGenerate,
+              icon: const Icon(Icons.auto_awesome_rounded),
+              label: Text(isGenerating ? 'Generating' : 'Generate with Gemini'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: onExport,
+              icon: const Icon(Icons.ios_share_rounded),
+              label: const Text('Export PPTX'),
+            ),
+            const Spacer(),
+            Text('${slides.length} slides'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: slides.isEmpty
+              ? const Center(
+                  child: Text('Generate slides from your note content.'),
+                )
+              : ListView.separated(
+                  itemCount: slides.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final slide = slides[index];
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          children: [
+                            TextFormField(
+                              initialValue: slide.title,
+                              decoration: const InputDecoration(
+                                labelText: 'Slide title',
+                              ),
+                              onChanged: (value) {
+                                slides[index] = GeneratedSlide(
+                                  title: value,
+                                  bullets: slide.bullets,
+                                  notes: slide.notes,
+                                );
+                                _persist(slides);
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              initialValue: slide.bullets.join('\n'),
+                              minLines: 3,
+                              maxLines: 6,
+                              decoration: const InputDecoration(
+                                labelText: 'Bullets, one per line',
+                              ),
+                              onChanged: (value) {
+                                slides[index] = GeneratedSlide(
+                                  title: slide.title,
+                                  bullets: value
+                                      .split('\n')
+                                      .map((line) => line.trim())
+                                      .where((line) => line.isNotEmpty)
+                                      .toList(),
+                                  notes: slide.notes,
+                                );
+                                _persist(slides);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
 }
 
 class _FlashcardWorkspace extends StatelessWidget {
@@ -2112,8 +2940,10 @@ class _FlashcardWorkspace extends StatelessWidget {
     required this.cards,
     required this.index,
     required this.showAnswer,
+    required this.isGenerating,
     required this.onApiKeyChanged,
     required this.onGenerate,
+    required this.onChanged,
     required this.onToggleAnswer,
     required this.onPrevious,
     required this.onNext,
@@ -2121,17 +2951,20 @@ class _FlashcardWorkspace extends StatelessWidget {
 
   final bool hasApiKey;
   final String apiKey;
-  final List<_FlashCardItem> cards;
+  final List<GeneratedFlashcard> cards;
   final int index;
   final bool showAnswer;
+  final bool isGenerating;
   final ValueChanged<String> onApiKeyChanged;
   final VoidCallback onGenerate;
+  final ValueChanged<String> onChanged;
   final VoidCallback onToggleAnswer;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
+    final safeIndex = cards.isEmpty ? 0 : index.clamp(0, cards.length - 1);
     return Card(
       color: Colors.white,
       child: Padding(
@@ -2150,7 +2983,7 @@ class _FlashcardWorkspace extends StatelessWidget {
                 const Spacer(),
                 if (cards.isNotEmpty)
                   Chip(
-                    label: Text('${index + 1}/${cards.length}'),
+                    label: Text('${safeIndex + 1}/${cards.length}'),
                     visualDensity: VisualDensity.compact,
                   ),
               ],
@@ -2195,9 +3028,9 @@ class _FlashcardWorkspace extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   FilledButton.icon(
-                    onPressed: onGenerate,
+                    onPressed: isGenerating ? null : onGenerate,
                     icon: const Icon(Icons.auto_awesome_rounded),
-                    label: const Text('Generate cards'),
+                    label: Text(isGenerating ? 'Generating' : 'Generate cards'),
                   ),
                   OutlinedButton.icon(
                     onPressed: cards.isEmpty ? null : onPrevious,
@@ -2219,45 +3052,101 @@ class _FlashcardWorkspace extends StatelessWidget {
                           'Generate flashcards from your note content.',
                         ),
                       )
-                    : InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: onToggleAnswer,
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainer,
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outlineVariant,
+                    : Column(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: onToggleAnswer,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainer,
+                                  border: Border.all(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      showAnswer ? 'Answer' : 'Question',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.labelLarge,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      showAnswer
+                                          ? cards[safeIndex].answer
+                                          : cards[safeIndex].question,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      'Tap card to flip',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                showAnswer ? 'Answer' : 'Question',
-                                style: Theme.of(context).textTheme.labelLarge,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                showAnswer
-                                    ? cards[index].answer
-                                    : cards[index].question,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const Spacer(),
-                              Text(
-                                'Tap card to flip',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
+                          const SizedBox(height: 10),
+                          TextFormField(
+                            initialValue: cards[safeIndex].question,
+                            decoration: const InputDecoration(
+                              labelText: 'Question',
+                            ),
+                            onChanged: (value) {
+                              final next = [...cards];
+                              next[safeIndex] = GeneratedFlashcard(
+                                question: value,
+                                answer: cards[safeIndex].answer,
+                                topic: cards[safeIndex].topic,
+                              );
+                              onChanged(
+                                jsonEncode({
+                                  'cards': next
+                                      .map((card) => card.toJson())
+                                      .toList(),
+                                }),
+                              );
+                            },
                           ),
-                        ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            initialValue: cards[safeIndex].answer,
+                            decoration: const InputDecoration(
+                              labelText: 'Answer',
+                            ),
+                            onChanged: (value) {
+                              final next = [...cards];
+                              next[safeIndex] = GeneratedFlashcard(
+                                question: cards[safeIndex].question,
+                                answer: value,
+                                topic: cards[safeIndex].topic,
+                              );
+                              onChanged(
+                                jsonEncode({
+                                  'cards': next
+                                      .map((card) => card.toJson())
+                                      .toList(),
+                                }),
+                              );
+                            },
+                          ),
+                        ],
                       ),
               ),
             ],
@@ -2268,7 +3157,7 @@ class _FlashcardWorkspace extends StatelessWidget {
   }
 }
 
-enum EditorSurface { note, table, graph, flashcards }
+enum EditorSurface { note, sheet, slides, flashcards, table, graph }
 
 class ProgressPanel extends StatelessWidget {
   const ProgressPanel({super.key, required this.controller});

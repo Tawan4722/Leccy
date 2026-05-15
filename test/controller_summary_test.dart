@@ -106,4 +106,30 @@ void main() {
       controller.dispose();
     },
   );
+
+  test(
+    'normal file selection opens file and selection mode toggles checks',
+    () async {
+      final controller = AppController(repository: MemoryLeccyStore());
+      await controller.load();
+      await controller.createFolder(
+        name: 'Physics',
+        colorValue: 0xFF2457C5,
+        badge: 'PH',
+      );
+      await controller.createFile();
+      final first = controller.selectedFile!.id;
+      await controller.createFile();
+      final second = controller.selectedFile!.id;
+
+      controller.selectFile(first);
+      expect(controller.selectedFileId, first);
+
+      controller.setFileSelectionMode(true);
+      controller.selectFile(second);
+
+      expect(controller.selectedFileId, first);
+      expect(controller.selectedFileIds, contains(second));
+    },
+  );
 }

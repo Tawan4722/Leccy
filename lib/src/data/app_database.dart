@@ -8,6 +8,10 @@ class AppDatabase {
   AppDatabase._(this.database);
 
   final Database database;
+  static const _defaultSheetJson =
+      '{"columns":["A","B","C"],"rows":[["","",""],["","",""],["","",""]],"chartType":"bar","labelColumn":0,"valueColumn":1}';
+  static const _defaultSlidesJson = '{"slides":[]}';
+  static const _defaultFlashcardsJson = '{"cards":[]}';
 
   static Future<AppDatabase> open({
     DatabaseFactory? factory,
@@ -19,7 +23,7 @@ class AppDatabase {
     final db = await dbFactory.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onCreate: (db, version) async {
           await _createSchema(db);
         },
@@ -34,6 +38,9 @@ class AppDatabase {
             await db.execute(
               "ALTER TABLE lecture_files ADD COLUMN summary_updated_at INTEGER",
             );
+          }
+          if (oldVersion < 3) {
+            await _addFileWorkspaceColumns(db);
           }
         },
         onConfigure: (db) async {
@@ -72,6 +79,9 @@ class AppDatabase {
         description TEXT NOT NULL DEFAULT '',
         content_json TEXT NOT NULL,
         quick_note TEXT NOT NULL DEFAULT '',
+        sheet_json TEXT NOT NULL DEFAULT '$_defaultSheetJson',
+        slides_json TEXT NOT NULL DEFAULT '$_defaultSlidesJson',
+        flashcards_json TEXT NOT NULL DEFAULT '$_defaultFlashcardsJson',
         progress_percent INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL,
         auto_summary_enabled INTEGER NOT NULL DEFAULT 0,
@@ -100,6 +110,18 @@ class AppDatabase {
         FOREIGN KEY(file_id) REFERENCES lecture_files(id) ON DELETE CASCADE
       )
     ''');
+  }
+
+  static Future<void> _addFileWorkspaceColumns(Database db) async {
+    await db.execute(
+      "ALTER TABLE lecture_files ADD COLUMN sheet_json TEXT NOT NULL DEFAULT '$_defaultSheetJson'",
+    );
+    await db.execute(
+      "ALTER TABLE lecture_files ADD COLUMN slides_json TEXT NOT NULL DEFAULT '$_defaultSlidesJson'",
+    );
+    await db.execute(
+      "ALTER TABLE lecture_files ADD COLUMN flashcards_json TEXT NOT NULL DEFAULT '$_defaultFlashcardsJson'",
+    );
   }
 
   Future<void> close() => database.close();

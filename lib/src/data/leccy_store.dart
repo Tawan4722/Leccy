@@ -45,5 +45,11 @@ abstract interface class LeccyStore {
     required String extension,
   });
 
+  Future<String> saveAttachment({
+    required Uint8List bytes,
+    required String extension,
+    required String mediaType,
+  });
+
   Future<void> close();
 }

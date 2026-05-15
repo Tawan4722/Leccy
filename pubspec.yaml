@@ -46,6 +46,11 @@ dependencies:
   intl: ^0.20.2
   url_launcher: ^6.3.2
   google_fonts: ^6.3.1
+  flutter_quill_extensions: ^11.0.0
+  flutter_drawing_board: ^1.0.1+2
+  http: ^1.6.0
+  archive: ^4.0.9
+  xml: ^6.6.1
 
 dev_dependencies:
   flutter_test:

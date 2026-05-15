@@ -57,6 +57,9 @@ void main() {
           contentJson:
               '[{"insert":"Main"},{"insert":"\\n","attributes":{"header":1}},{"insert":"Child"},{"insert":"\\n","attributes":{"header":2}},{"insert":"Child body\\n"}]',
           quickNote: '',
+          sheetJson: LectureFile.emptySheetJson(),
+          slidesJson: LectureFile.emptySlidesJson(),
+          flashcardsJson: LectureFile.emptyFlashcardsJson(),
           progressPercent: 0,
           updatedAt: DateTime(2026),
           autoSummaryEnabled: false,

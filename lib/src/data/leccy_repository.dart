@@ -101,6 +101,9 @@ class LeccyRepository implements LeccyStore {
       description: '',
       contentJson: LectureFile.emptyDocumentJson(),
       quickNote: '',
+      sheetJson: LectureFile.emptySheetJson(),
+      slidesJson: LectureFile.emptySlidesJson(),
+      flashcardsJson: LectureFile.emptyFlashcardsJson(),
       progressPercent: 0,
       updatedAt: now,
       autoSummaryEnabled: false,
@@ -208,16 +211,36 @@ class LeccyRepository implements LeccyStore {
     required Uint8List bytes,
     required String extension,
   }) async {
+    return saveAttachment(
+      bytes: bytes,
+      extension: extension,
+      mediaType: 'covers',
+    );
+  }
+
+  @override
+  Future<String> saveAttachment({
+    required Uint8List bytes,
+    required String extension,
+    required String mediaType,
+  }) async {
     final documents = await getApplicationDocumentsDirectory();
-    final coverDir = Directory(p.join(documents.path, 'Leccy', 'covers'));
-    if (!coverDir.existsSync()) {
-      coverDir.createSync(recursive: true);
+    final safeType = mediaType.replaceAll(RegExp('[^a-zA-Z0-9_-]'), '');
+    final attachmentDir = Directory(
+      p.join(
+        documents.path,
+        'Leccy',
+        safeType.isEmpty ? 'attachments' : safeType,
+      ),
+    );
+    if (!attachmentDir.existsSync()) {
+      attachmentDir.createSync(recursive: true);
     }
     final safeExtension = extension.replaceAll(RegExp('[^a-zA-Z0-9]'), '');
     final file = File(
       p.join(
-        coverDir.path,
-        'cover_${DateTime.now().millisecondsSinceEpoch}.${safeExtension.isEmpty ? 'png' : safeExtension}',
+        attachmentDir.path,
+        'leccy_${DateTime.now().microsecondsSinceEpoch}.${safeExtension.isEmpty ? 'bin' : safeExtension}',
       ),
     );
     await file.writeAsBytes(bytes, flush: true);
