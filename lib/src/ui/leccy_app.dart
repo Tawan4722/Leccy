@@ -201,8 +201,10 @@ class LeccyApp extends ConsumerWidget {
           seedColor: accent,
           brightness: isDark ? Brightness.dark : Brightness.light,
         ).copyWith(
-          surface: isDark ? const Color(0xFF171A21) : const Color(0xFFFFF7EA),
-          onSurface: isDark ? const Color(0xFFE8ECF5) : const Color(0xFF241E16),
+          surface: isDark ? const Color(0xFF282522) : const Color(0xFFF4EEDD),
+          onSurface: isDark ? const Color(0xFFD4C8C0) : const Color(0xFF4C3E36),
+          primary: isDark ? const Color(0xFFD4A373) : const Color(0xFF967259),
+          primaryContainer: isDark ? const Color(0xFF5C4736) : const Color(0xFFE6D0C0),
         );
 
     return MaterialApp(
@@ -241,23 +243,23 @@ class LeccyApp extends ConsumerWidget {
       primaryTextTheme: textTheme,
       colorScheme: scheme,
       scaffoldBackgroundColor: isDark
-          ? const Color(0xFF0D1016)
-          : const Color(0xFFF3E8D7),
+          ? const Color(0xFF1E1B19)
+          : const Color(0xFFEDE0D4),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(32)),
           borderSide: BorderSide(
-            color: isDark ? const Color(0x33FFFFFF) : const Color(0x33333B4F),
+            color: isDark ? const Color(0x33D4C8C0) : const Color(0x334C3E36),
           ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(32)),
           borderSide: BorderSide(
-            color: isDark ? const Color(0x22FFFFFF) : const Color(0x22333B4F),
+            color: isDark ? const Color(0x22D4C8C0) : const Color(0x224C3E36),
           ),
         ),
         filled: true,
-        fillColor: isDark ? const Color(0x11FFFFFF) : const Color(0x88FFFFFF),
+        fillColor: isDark ? const Color(0x11D4C8C0) : const Color(0x88F4EEDD),
         isDense: true,
       ),
       cardTheme: const CardThemeData(

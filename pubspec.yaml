@@ -53,6 +53,7 @@ dependencies:
   xml: ^6.6.1
   record: ^6.2.0
   audioplayers: ^6.6.0
+  msix: ^3.16.13
 
 dev_dependencies:
   flutter_test:
@@ -70,11 +71,16 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
+
+msix_config:
+  display_name: Leccy
+  publisher_display_name: Waiyawat
+  identity_name: Leccy.App
+  msix_version: 1.0.0.1
+  publisher: CN=Leccy
+  capabilities: internetClient, microphone
+
 
   # To add assets to your application, add an assets section, like this:
   # assets:
