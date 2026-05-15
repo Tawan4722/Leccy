@@ -195,8 +195,8 @@ class LeccyApp extends ConsumerWidget {
           seedColor: accent,
           brightness: isDark ? Brightness.dark : Brightness.light,
         ).copyWith(
-          surface: isDark ? const Color(0xFF171A21) : const Color(0xFFF4F7FF),
-          onSurface: isDark ? const Color(0xFFE8ECF5) : const Color(0xFF111318),
+          surface: isDark ? const Color(0xFF171A21) : const Color(0xFFFFF7EA),
+          onSurface: isDark ? const Color(0xFFE8ECF5) : const Color(0xFF241E16),
         );
 
     return MaterialApp(
@@ -236,7 +236,7 @@ class LeccyApp extends ConsumerWidget {
       colorScheme: scheme,
       scaffoldBackgroundColor: isDark
           ? const Color(0xFF0D1016)
-          : const Color(0xFFECEFF8),
+          : const Color(0xFFF3E8D7),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
           borderRadius: const BorderRadius.all(Radius.circular(32)),
@@ -3876,7 +3876,7 @@ class _LiquidWallpaper extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: isDark
               ? const [Color(0xFF070A13), Color(0xFF101A2E), Color(0xFF202844)]
-              : const [Color(0xFFE8EEFF), Color(0xFFD6ECFA), Color(0xFFF2EEFF)],
+              : const [Color(0xFFE8DCC8), Color(0xFFFFF7EA), Color(0xFFD9C6A8)],
         ),
       ),
       child: Stack(
@@ -3886,7 +3886,7 @@ class _LiquidWallpaper extends StatelessWidget {
             top: -140,
             child: _Blob(
               size: 360,
-              color: isDark ? const Color(0x3347B8FF) : const Color(0x66A0C8FF),
+              color: isDark ? const Color(0x3347B8FF) : const Color(0x77FFF6E6),
             ),
           ),
           Positioned(
@@ -3894,7 +3894,7 @@ class _LiquidWallpaper extends StatelessWidget {
             top: 120,
             child: _Blob(
               size: 310,
-              color: isDark ? const Color(0x3367E5D6) : const Color(0x66C2F5EA),
+              color: isDark ? const Color(0x3367E5D6) : const Color(0x66D6B98C),
             ),
           ),
           Positioned(
@@ -3902,7 +3902,7 @@ class _LiquidWallpaper extends StatelessWidget {
             bottom: -130,
             child: _Blob(
               size: 340,
-              color: isDark ? const Color(0x335894FF) : const Color(0x66E2D4FF),
+              color: isDark ? const Color(0x335894FF) : const Color(0x66F5E4C9),
             ),
           ),
           Positioned(
@@ -3910,7 +3910,7 @@ class _LiquidWallpaper extends StatelessWidget {
             bottom: 120,
             child: _Blob(
               size: 220,
-              color: isDark ? const Color(0x224A6EFF) : const Color(0x55C9D9FF),
+              color: isDark ? const Color(0x224A6EFF) : const Color(0x55B99664),
             ),
           ),
         ],

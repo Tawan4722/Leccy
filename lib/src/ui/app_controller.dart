@@ -37,8 +37,8 @@ class AppController extends ChangeNotifier {
   AppThemeMode themeMode = AppThemeMode.light;
   AppFontPreset fontPreset = AppFontPreset.workSans;
   bool fastMode = true;
-  int accentColorValue = const Color(0xFF2457C5).toARGB32();
-  int editorPaperColorValue = const Color(0xFFFFFFFF).toARGB32();
+  int accentColorValue = const Color(0xFFE8DCC8).toARGB32();
+  int editorPaperColorValue = const Color(0xFFFFFBF4).toARGB32();
   String apiKey = '';
   bool showLeftPane = true;
   bool showRightPane = true;
