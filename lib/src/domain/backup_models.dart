@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 import 'models.dart';
 
 enum BackupImportMode { replace, merge }
@@ -12,11 +14,12 @@ class LeccyBackupBundle {
     required this.studySets,
     required this.studySetItems,
     required this.coverImages,
+    this.checksumSha256,
     this.version = currentVersion,
   });
 
   static const String format = 'leccy-backup';
-  static const int currentVersion = 1;
+  static const int currentVersion = 2;
 
   final int version;
   final DateTime exportedAt;
@@ -25,18 +28,12 @@ class LeccyBackupBundle {
   final List<StudySet> studySets;
   final List<StudySetItem> studySetItems;
   final List<LeccyBackupCoverImage> coverImages;
+  final String? checksumSha256;
 
   Map<String, Object?> toJson() {
-    return {
-      'format': format,
-      'version': version,
-      'exported_at': exportedAt.millisecondsSinceEpoch,
-      'folders': folders.map((folder) => folder.toMap()).toList(),
-      'files': files.map((file) => file.toMap()).toList(),
-      'study_sets': studySets.map((set) => set.toMap()).toList(),
-      'study_set_items': studySetItems.map((item) => item.toMap()).toList(),
-      'cover_images': coverImages.map((image) => image.toJson()).toList(),
-    };
+    final unsigned = _unsignedJson();
+    final checksum = _checksumFor(unsigned);
+    return {...unsigned, 'checksum_sha256': checksum};
   }
 
   String toJsonString({bool pretty = false}) {
@@ -54,7 +51,7 @@ class LeccyBackupBundle {
     if (version > currentVersion) {
       throw FormatException('Backup version $version is not supported yet.');
     }
-    return LeccyBackupBundle(
+    final backup = LeccyBackupBundle(
       version: version,
       exportedAt: DateTime.fromMillisecondsSinceEpoch(
         _asInt(json['exported_at']),
@@ -74,7 +71,10 @@ class LeccyBackupBundle {
       coverImages: _asList(
         json['cover_images'],
       ).map((item) => LeccyBackupCoverImage.fromJson(_asMap(item))).toList(),
+      checksumSha256: json['checksum_sha256']?.toString(),
     );
+    backup._validateChecksum();
+    return backup;
   }
 
   static LectureFolder _decodeFolder(Map<String, Object?> map) {
@@ -131,6 +131,33 @@ class LeccyBackupBundle {
       itemOrder: _asInt(map['item_order']),
       markerPercent: _asInt(map['marker_percent']),
     );
+  }
+
+  Map<String, Object?> _unsignedJson() {
+    return {
+      'format': format,
+      'version': version,
+      'exported_at': exportedAt.millisecondsSinceEpoch,
+      'folders': folders.map((folder) => folder.toMap()).toList(),
+      'files': files.map((file) => file.toMap()).toList(),
+      'study_sets': studySets.map((set) => set.toMap()).toList(),
+      'study_set_items': studySetItems.map((item) => item.toMap()).toList(),
+      'cover_images': coverImages.map((image) => image.toJson()).toList(),
+    };
+  }
+
+  void _validateChecksum() {
+    if (version < 2) {
+      return;
+    }
+    final checksum = checksumSha256?.trim() ?? '';
+    if (checksum.isEmpty) {
+      throw const FormatException('Backup checksum is missing.');
+    }
+    final expected = _checksumFor(_unsignedJson());
+    if (checksum.toLowerCase() != expected) {
+      throw const FormatException('Backup checksum mismatch.');
+    }
   }
 }
 
@@ -192,4 +219,8 @@ int _asInt(Object? value) {
     }
   }
   throw const FormatException('Backup JSON has an invalid integer field.');
+}
+
+String _checksumFor(Map<String, Object?> value) {
+  return sha256.convert(utf8.encode(jsonEncode(value))).toString();
 }
