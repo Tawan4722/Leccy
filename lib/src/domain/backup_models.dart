@@ -85,6 +85,7 @@ class LeccyBackupBundle {
       badge: map['badge']?.toString() ?? '',
       coverImagePath: map['cover_image_path']?.toString(),
       sortOrder: _asInt(map['sort_order']),
+      deletedAt: _toDateTime(map['deleted_at']),
     );
   }
 
@@ -108,6 +109,7 @@ class LeccyBackupBundle {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(_asInt(map['updated_at'])),
       autoSummaryEnabled: _asInt(map['auto_summary_enabled']) == 1,
       isImportant: _asIntOrDefault(map['important_flag'], 0) == 1,
+      deletedAt: _toDateTime(map['deleted_at']),
       summarySourceHash: map['summary_source_hash']?.toString(),
       summaryUpdatedAt: summaryUpdated == null
           ? null
@@ -227,6 +229,13 @@ int _asIntOrDefault(Object? value, int fallback) {
     return fallback;
   }
   return _asInt(value);
+}
+
+DateTime? _toDateTime(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  return DateTime.fromMillisecondsSinceEpoch(_asInt(value));
 }
 
 String _checksumFor(Map<String, Object?> value) {

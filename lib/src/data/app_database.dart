@@ -23,7 +23,7 @@ class AppDatabase {
     final db = await dbFactory.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 4,
+        version: 5,
         onCreate: (db, version) async {
           await _createSchema(db);
         },
@@ -46,6 +46,15 @@ class AppDatabase {
             await db.execute(
               'ALTER TABLE lecture_files ADD COLUMN important_flag INTEGER NOT NULL DEFAULT 0',
             );
+          }
+          if (oldVersion < 5) {
+            await db.execute(
+              'ALTER TABLE folders ADD COLUMN deleted_at INTEGER',
+            );
+            await db.execute(
+              'ALTER TABLE lecture_files ADD COLUMN deleted_at INTEGER',
+            );
+            await _createSettingsTable(db);
           }
         },
         onConfigure: (db) async {
@@ -73,7 +82,8 @@ class AppDatabase {
         color_value INTEGER NOT NULL,
         badge TEXT NOT NULL,
         cover_image_path TEXT,
-        sort_order INTEGER NOT NULL DEFAULT 0
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        deleted_at INTEGER
       )
     ''');
     await db.execute('''
@@ -91,6 +101,7 @@ class AppDatabase {
         updated_at INTEGER NOT NULL,
         auto_summary_enabled INTEGER NOT NULL DEFAULT 0,
         important_flag INTEGER NOT NULL DEFAULT 0,
+        deleted_at INTEGER,
         summary_source_hash TEXT,
         summary_updated_at INTEGER,
         FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE
@@ -116,6 +127,7 @@ class AppDatabase {
         FOREIGN KEY(file_id) REFERENCES lecture_files(id) ON DELETE CASCADE
       )
     ''');
+    await _createSettingsTable(db);
   }
 
   static Future<void> _addFileWorkspaceColumns(Database db) async {
@@ -128,6 +140,15 @@ class AppDatabase {
     await db.execute(
       "ALTER TABLE lecture_files ADD COLUMN flashcards_json TEXT NOT NULL DEFAULT '$_defaultFlashcardsJson'",
     );
+  }
+
+  static Future<void> _createSettingsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> close() => database.close();

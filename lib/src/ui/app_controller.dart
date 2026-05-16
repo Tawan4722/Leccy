@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -50,6 +51,17 @@ class AppController extends ChangeNotifier {
   double rightPaneWidth = 320;
   bool? _fastModeBeforeFullscreen;
   int _folderLoadGeneration = 0;
+  DateTime? lastBackupAt;
+
+  static const _themeModeKey = 'theme_mode';
+  static const _fastModeKey = 'fast_mode';
+  static const _fontPresetKey = 'font_preset';
+  static const _accentColorKey = 'accent_color';
+  static const _editorPaperColorKey = 'editor_paper_color';
+  static const _leftPaneKey = 'left_pane_visible';
+  static const _rightPaneKey = 'right_pane_visible';
+  static const _apiKeyKey = 'api_key';
+  static const _lastBackupKey = 'last_backup_at';
 
   List<LectureFolder> folders = [];
   List<LectureFile> files = [];
@@ -117,6 +129,7 @@ class AppController extends ChangeNotifier {
       errorMessage = null;
       notifyListeners();
       _repository ??= await openLeccyStore();
+      await _loadSettings();
       await _loadFolders();
       if (folders.isNotEmpty) {
         selectedFolderId ??= folders.first.id;
@@ -195,26 +208,31 @@ class AppController extends ChangeNotifier {
 
   void setThemeMode(AppThemeMode value) {
     themeMode = value;
+    unawaited(repository.setSetting(_themeModeKey, value.name));
     notifyListeners();
   }
 
   void setFastMode(bool value) {
     fastMode = value;
+    unawaited(repository.setSetting(_fastModeKey, value.toString()));
     notifyListeners();
   }
 
   void setFontPreset(AppFontPreset value) {
     fontPreset = value;
+    unawaited(repository.setSetting(_fontPresetKey, value.name));
     notifyListeners();
   }
 
   void setAccentColorValue(int value) {
     accentColorValue = value;
+    unawaited(repository.setSetting(_accentColorKey, value.toString()));
     notifyListeners();
   }
 
   void setEditorPaperColorValue(int value) {
     editorPaperColorValue = value;
+    unawaited(repository.setSetting(_editorPaperColorKey, value.toString()));
     notifyListeners();
   }
 
@@ -222,16 +240,19 @@ class AppController extends ChangeNotifier {
 
   void setApiKey(String value) {
     apiKey = value.trim();
+    unawaited(repository.setSetting(_apiKeyKey, apiKey));
     notifyListeners();
   }
 
   void setLeftPaneVisible(bool value) {
     showLeftPane = value;
+    unawaited(repository.setSetting(_leftPaneKey, value.toString()));
     notifyListeners();
   }
 
   void setRightPaneVisible(bool value) {
     showRightPane = value;
+    unawaited(repository.setSetting(_rightPaneKey, value.toString()));
     notifyListeners();
   }
 
@@ -497,6 +518,88 @@ class AppController extends ChangeNotifier {
     await updateFile(file.copyWith(isImportant: !file.isImportant));
   }
 
+  Future<void> moveSelectedFileToTrash() async {
+    final fileId = selectedFileId;
+    if (fileId == null) {
+      return;
+    }
+    await repository.moveFileToTrash(fileId);
+    await refreshFolderContent();
+  }
+
+  Future<void> moveFileToTrash(int fileId) async {
+    await repository.moveFileToTrash(fileId);
+    if (selectedFileId == fileId) {
+      selectedFileId = null;
+    }
+    await refreshFolderContent();
+  }
+
+  Future<void> moveFolderToTrash(int folderId) async {
+    await repository.moveFolderToTrash(folderId);
+    await _loadFolders();
+    if (selectedFolderId == folderId) {
+      selectedFolderId = folders.isEmpty ? null : folders.first.id;
+      selectedFileId = null;
+      if (selectedFolderId != null) {
+        await _loadFolderContent(selectedFolderId!);
+      } else {
+        files = [];
+        studySets = [];
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> restoreFileFromTrash(int fileId) async {
+    await repository.restoreFileFromTrash(fileId);
+    await refreshFolderContent(keepSelection: true);
+  }
+
+  Future<void> permanentlyDeleteFile(int fileId) async {
+    await repository.permanentlyDeleteFile(fileId);
+    await refreshFolderContent(keepSelection: true);
+  }
+
+  Future<void> restoreFolderFromTrash(int folderId) async {
+    await repository.restoreFolderFromTrash(folderId);
+    await _loadFolders();
+    notifyListeners();
+  }
+
+  Future<void> permanentlyDeleteFolder(int folderId) async {
+    await repository.permanentlyDeleteFolder(folderId);
+    await _loadFolders();
+    notifyListeners();
+  }
+
+  Future<List<LectureFolder>> loadTrashedFolders() {
+    return repository.trashedFolders();
+  }
+
+  Future<List<LectureFile>> loadTrashedFiles() {
+    return repository.trashedFiles();
+  }
+
+  Future<List<LectureFile>> searchFiles(String query) {
+    return repository.searchFiles(query);
+  }
+
+  Future<void> openFileFromGlobalSearch(int fileId) async {
+    final allFolders = await repository.folders();
+    for (final folder in allFolders) {
+      final folderFiles = await repository.filesForFolder(folder.id);
+      if (folderFiles.any((file) => file.id == fileId)) {
+        selectedFolderId = folder.id;
+        selectedFileId = fileId;
+        await _loadFolders();
+        await _loadFolderContent(folder.id);
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
   Future<void> createStudySetFromSelection() async {
     final folderId = selectedFolderId;
     if (folderId == null || selectedFileIds.isEmpty) {
@@ -537,6 +640,11 @@ class AppController extends ChangeNotifier {
 
   Future<Uint8List> exportBackupBytes() async {
     final backup = await repository.exportBackup();
+    lastBackupAt = DateTime.now();
+    await repository.setSetting(
+      _lastBackupKey,
+      lastBackupAt!.millisecondsSinceEpoch.toString(),
+    );
     return Uint8List.fromList(utf8.encode(backup.toJsonString(pretty: true)));
   }
 
@@ -552,6 +660,11 @@ class AppController extends ChangeNotifier {
       decoded.map((key, value) => MapEntry(key.toString(), value as Object?)),
     );
     await repository.importBackup(backup, mode: mode);
+    lastBackupAt = DateTime.now();
+    await repository.setSetting(
+      _lastBackupKey,
+      lastBackupAt!.millisecondsSinceEpoch.toString(),
+    );
 
     selectedFolderId = null;
     selectedFileId = null;
@@ -602,6 +715,50 @@ class AppController extends ChangeNotifier {
       return 'L';
     }
     return trimmed.characters.take(3).toString().toUpperCase();
+  }
+
+  Future<void> _loadSettings() async {
+    final loadedTheme = await repository.getSetting(_themeModeKey);
+    if (loadedTheme == AppThemeMode.dark.name) {
+      themeMode = AppThemeMode.dark;
+    }
+    final loadedFastMode = await repository.getSetting(_fastModeKey);
+    if (loadedFastMode != null) {
+      fastMode = loadedFastMode == 'true';
+    }
+    final loadedFont = await repository.getSetting(_fontPresetKey);
+    if (loadedFont != null) {
+      for (final preset in AppFontPreset.values) {
+        if (preset.name == loadedFont) {
+          fontPreset = preset;
+          break;
+        }
+      }
+    }
+    final loadedAccent = await repository.getSetting(_accentColorKey);
+    final parsedAccent = int.tryParse(loadedAccent ?? '');
+    if (parsedAccent != null) {
+      accentColorValue = parsedAccent;
+    }
+    final loadedPaper = await repository.getSetting(_editorPaperColorKey);
+    final parsedPaper = int.tryParse(loadedPaper ?? '');
+    if (parsedPaper != null) {
+      editorPaperColorValue = parsedPaper;
+    }
+    final loadedLeftPane = await repository.getSetting(_leftPaneKey);
+    if (loadedLeftPane != null) {
+      showLeftPane = loadedLeftPane == 'true';
+    }
+    final loadedRightPane = await repository.getSetting(_rightPaneKey);
+    if (loadedRightPane != null) {
+      showRightPane = loadedRightPane == 'true';
+    }
+    apiKey = (await repository.getSetting(_apiKeyKey)) ?? '';
+    final loadedBackupAt = await repository.getSetting(_lastBackupKey);
+    final millis = int.tryParse(loadedBackupAt ?? '');
+    if (millis != null) {
+      lastBackupAt = DateTime.fromMillisecondsSinceEpoch(millis);
+    }
   }
 
   @override

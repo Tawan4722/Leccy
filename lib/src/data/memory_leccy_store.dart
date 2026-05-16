@@ -10,6 +10,7 @@ class MemoryLeccyStore implements LeccyStore {
   final List<LectureFile> _files = [];
   final List<StudySet> _sets = [];
   final List<StudySetItem> _items = [];
+  final Map<String, String> _settings = {};
 
   int _nextFolderId = 1;
   int _nextFileId = 1;
@@ -18,12 +19,13 @@ class MemoryLeccyStore implements LeccyStore {
 
   @override
   Future<List<LectureFolder>> folders() async {
-    return [..._folders]..sort((a, b) {
-      final order = a.sortOrder.compareTo(b.sortOrder);
-      return order == 0
-          ? a.name.toLowerCase().compareTo(b.name.toLowerCase())
-          : order;
-    });
+    return _folders.where((folder) => folder.deletedAt == null).toList()
+      ..sort((a, b) {
+        final order = a.sortOrder.compareTo(b.sortOrder);
+        return order == 0
+            ? a.name.toLowerCase().compareTo(b.name.toLowerCase())
+            : order;
+      });
   }
 
   @override
@@ -55,7 +57,28 @@ class MemoryLeccyStore implements LeccyStore {
 
   @override
   Future<List<LectureFile>> filesForFolder(int folderId) async {
-    return _files.where((file) => file.folderId == folderId).toList()
+    return _files
+        .where((file) => file.folderId == folderId && file.deletedAt == null)
+        .toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  @override
+  Future<List<LectureFile>> searchFiles(String query) async {
+    final normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return const [];
+    }
+    return _files
+        .where((file) => file.deletedAt == null)
+        .where(
+          (file) =>
+              file.title.toLowerCase().contains(normalized) ||
+              file.description.toLowerCase().contains(normalized) ||
+              file.quickNote.toLowerCase().contains(normalized) ||
+              file.contentJson.toLowerCase().contains(normalized),
+        )
+        .toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
@@ -63,6 +86,9 @@ class MemoryLeccyStore implements LeccyStore {
   Future<Map<int, int>> fileCountsByFolder() async {
     final counts = <int, int>{};
     for (final file in _files) {
+      if (file.deletedAt != null) {
+        continue;
+      }
       counts[file.folderId] = (counts[file.folderId] ?? 0) + 1;
     }
     return counts;
@@ -73,6 +99,9 @@ class MemoryLeccyStore implements LeccyStore {
     final totals = <int, int>{};
     final counts = <int, int>{};
     for (final file in _files) {
+      if (file.deletedAt != null) {
+        continue;
+      }
       totals[file.folderId] =
           (totals[file.folderId] ?? 0) + file.progressPercent;
       counts[file.folderId] = (counts[file.folderId] ?? 0) + 1;
@@ -100,6 +129,7 @@ class MemoryLeccyStore implements LeccyStore {
       autoSummaryEnabled: false,
       summarySourceHash: null,
       summaryUpdatedAt: null,
+      deletedAt: null,
     );
     _files.add(file);
     return file;
@@ -115,7 +145,19 @@ class MemoryLeccyStore implements LeccyStore {
 
   @override
   Future<List<StudySet>> studySetsForFolder(int folderId) async {
-    return _sets.where((set) => set.folderId == folderId).toList()
+    final activeFileIds = _files
+        .where((file) => file.deletedAt == null)
+        .map((file) => file.id)
+        .toSet();
+    final validSetIds = _items
+        .where((item) => activeFileIds.contains(item.fileId))
+        .map((item) => item.studySetId)
+        .toSet();
+    return _sets
+        .where(
+          (set) => set.folderId == folderId && validSetIds.contains(set.id),
+        )
+        .toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
@@ -173,7 +215,10 @@ class MemoryLeccyStore implements LeccyStore {
     }
     final fileIndex = _files.indexWhere((file) => file.id == fileId);
     if (fileIndex != -1) {
-      _files[fileIndex] = _files[fileIndex].copyWith(progressPercent: marker);
+      _files[fileIndex] = _files[fileIndex].copyWith(
+        progressPercent: marker,
+        updatedAt: DateTime.now(),
+      );
     }
   }
 
@@ -200,6 +245,109 @@ class MemoryLeccyStore implements LeccyStore {
     final cleanMediaType = mediaType.replaceAll(RegExp('[^a-zA-Z0-9]'), '');
     final type = cleanMediaType.isEmpty ? 'application' : cleanMediaType;
     return 'data:$type/$mimeExtension;base64,${base64Encode(bytes)}';
+  }
+
+  @override
+  Future<List<LectureFolder>> trashedFolders() async {
+    return _folders.where((folder) => folder.deletedAt != null).toList()
+      ..sort((a, b) => b.deletedAt!.compareTo(a.deletedAt!));
+  }
+
+  @override
+  Future<List<LectureFile>> trashedFiles() async {
+    return _files.where((file) => file.deletedAt != null).toList()
+      ..sort((a, b) => b.deletedAt!.compareTo(a.deletedAt!));
+  }
+
+  @override
+  Future<void> moveFileToTrash(int fileId) async {
+    final index = _files.indexWhere((file) => file.id == fileId);
+    if (index == -1) {
+      return;
+    }
+    _files[index] = _files[index].copyWith(
+      deletedAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> restoreFileFromTrash(int fileId) async {
+    final index = _files.indexWhere((file) => file.id == fileId);
+    if (index == -1) {
+      return;
+    }
+    _files[index] = _files[index].copyWith(
+      clearDeletedAt: true,
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> permanentlyDeleteFile(int fileId) async {
+    _files.removeWhere((file) => file.id == fileId);
+    _items.removeWhere((item) => item.fileId == fileId);
+    final activeSetIds = _items.map((item) => item.studySetId).toSet();
+    _sets.removeWhere((set) => !activeSetIds.contains(set.id));
+  }
+
+  @override
+  Future<void> moveFolderToTrash(int folderId) async {
+    final folderIndex = _folders.indexWhere((folder) => folder.id == folderId);
+    if (folderIndex == -1) {
+      return;
+    }
+    final now = DateTime.now();
+    _folders[folderIndex] = _folders[folderIndex].copyWith(deletedAt: now);
+    for (var i = 0; i < _files.length; i++) {
+      if (_files[i].folderId == folderId) {
+        _files[i] = _files[i].copyWith(deletedAt: now, updatedAt: now);
+      }
+    }
+  }
+
+  @override
+  Future<void> restoreFolderFromTrash(int folderId) async {
+    final folderIndex = _folders.indexWhere((folder) => folder.id == folderId);
+    if (folderIndex == -1) {
+      return;
+    }
+    _folders[folderIndex] = _folders[folderIndex].copyWith(
+      clearDeletedAt: true,
+    );
+    for (var i = 0; i < _files.length; i++) {
+      if (_files[i].folderId == folderId) {
+        _files[i] = _files[i].copyWith(
+          clearDeletedAt: true,
+          updatedAt: DateTime.now(),
+        );
+      }
+    }
+  }
+
+  @override
+  Future<void> permanentlyDeleteFolder(int folderId) async {
+    _folders.removeWhere((folder) => folder.id == folderId);
+    final removedFileIds = _files
+        .where((file) => file.folderId == folderId)
+        .map((file) => file.id)
+        .toSet();
+    _files.removeWhere((file) => file.folderId == folderId);
+    _items.removeWhere((item) => removedFileIds.contains(item.fileId));
+    final activeSetIds = _items.map((item) => item.studySetId).toSet();
+    _sets.removeWhere(
+      (set) => set.folderId == folderId || !activeSetIds.contains(set.id),
+    );
+  }
+
+  @override
+  Future<String?> getSetting(String key) async {
+    return _settings[key];
+  }
+
+  @override
+  Future<void> setSetting(String key, String value) async {
+    _settings[key] = value;
   }
 
   @override
@@ -272,6 +420,9 @@ class MemoryLeccyStore implements LeccyStore {
       _files
         ..clear()
         ..addAll(backup.files);
+      _settings['last_backup_imported_at'] = DateTime.now()
+          .millisecondsSinceEpoch
+          .toString();
       _sets
         ..clear()
         ..addAll(backup.studySets);

@@ -8,6 +8,7 @@ class LectureFolder {
     required this.badge,
     required this.sortOrder,
     this.coverImagePath,
+    this.deletedAt,
   });
 
   final int id;
@@ -16,6 +17,7 @@ class LectureFolder {
   final String badge;
   final String? coverImagePath;
   final int sortOrder;
+  final DateTime? deletedAt;
 
   LectureFolder copyWith({
     int? id,
@@ -25,6 +27,8 @@ class LectureFolder {
     String? coverImagePath,
     bool clearCoverImagePath = false,
     int? sortOrder,
+    DateTime? deletedAt,
+    bool clearDeletedAt = false,
   }) {
     return LectureFolder(
       id: id ?? this.id,
@@ -35,6 +39,7 @@ class LectureFolder {
           ? null
           : coverImagePath ?? this.coverImagePath,
       sortOrder: sortOrder ?? this.sortOrder,
+      deletedAt: clearDeletedAt ? null : deletedAt ?? this.deletedAt,
     );
   }
 
@@ -46,6 +51,9 @@ class LectureFolder {
       badge: map['badge'] as String,
       coverImagePath: map['cover_image_path'] as String?,
       sortOrder: map['sort_order'] as int,
+      deletedAt: (map['deleted_at'] as int?) == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(map['deleted_at'] as int),
     );
   }
 
@@ -57,6 +65,7 @@ class LectureFolder {
       'badge': badge,
       'cover_image_path': coverImagePath,
       'sort_order': sortOrder,
+      'deleted_at': deletedAt?.millisecondsSinceEpoch,
     };
   }
 }
@@ -76,6 +85,7 @@ class LectureFile {
     required this.updatedAt,
     required this.autoSummaryEnabled,
     this.isImportant = false,
+    this.deletedAt,
     this.summarySourceHash,
     this.summaryUpdatedAt,
   });
@@ -93,6 +103,7 @@ class LectureFile {
   final DateTime updatedAt;
   final bool autoSummaryEnabled;
   final bool isImportant;
+  final DateTime? deletedAt;
   final String? summarySourceHash;
   final DateTime? summaryUpdatedAt;
 
@@ -138,6 +149,8 @@ class LectureFile {
     DateTime? updatedAt,
     bool? autoSummaryEnabled,
     bool? isImportant,
+    DateTime? deletedAt,
+    bool clearDeletedAt = false,
     String? summarySourceHash,
     DateTime? summaryUpdatedAt,
     bool clearSummarySourceHash = false,
@@ -157,6 +170,7 @@ class LectureFile {
       updatedAt: updatedAt ?? this.updatedAt,
       autoSummaryEnabled: autoSummaryEnabled ?? this.autoSummaryEnabled,
       isImportant: isImportant ?? this.isImportant,
+      deletedAt: clearDeletedAt ? null : deletedAt ?? this.deletedAt,
       summarySourceHash: clearSummarySourceHash
           ? null
           : summarySourceHash ?? this.summarySourceHash,
@@ -182,6 +196,9 @@ class LectureFile {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
       autoSummaryEnabled: (map['auto_summary_enabled'] as int? ?? 0) == 1,
       isImportant: (map['important_flag'] as int? ?? 0) == 1,
+      deletedAt: (map['deleted_at'] as int?) == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(map['deleted_at'] as int),
       summarySourceHash: map['summary_source_hash'] as String?,
       summaryUpdatedAt: (map['summary_updated_at'] as int?) == null
           ? null
@@ -206,6 +223,7 @@ class LectureFile {
       'updated_at': updatedAt.millisecondsSinceEpoch,
       'auto_summary_enabled': autoSummaryEnabled ? 1 : 0,
       'important_flag': isImportant ? 1 : 0,
+      'deleted_at': deletedAt?.millisecondsSinceEpoch,
       'summary_source_hash': summarySourceHash,
       'summary_updated_at': summaryUpdatedAt?.millisecondsSinceEpoch,
     };

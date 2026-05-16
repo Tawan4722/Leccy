@@ -261,4 +261,45 @@ void main() {
     expect(items, hasLength(1));
     expect(items.single.fileId, importedFiles.single.id);
   });
+
+  test('trash and restore file hides it from active queries', () async {
+    final folder = await repository.createFolder(
+      name: 'Trashable',
+      colorValue: 0xFF123456,
+      badge: 'TR',
+    );
+    final file = await repository.createFile(folder.id);
+    await repository.updateFile(file.copyWith(title: 'Delete me'));
+
+    await repository.moveFileToTrash(file.id);
+
+    expect(await repository.filesForFolder(folder.id), isEmpty);
+    final trashed = await repository.trashedFiles();
+    expect(trashed.any((item) => item.id == file.id), isTrue);
+
+    await repository.restoreFileFromTrash(file.id);
+    final restored = await repository.filesForFolder(folder.id);
+    expect(restored.single.title, 'Delete me');
+  });
+
+  test('global search returns matching active notes', () async {
+    final folder = await repository.createFolder(
+      name: 'Search',
+      colorValue: 0xFF555555,
+      badge: 'SE',
+    );
+    final file = await repository.createFile(folder.id);
+    await repository.updateFile(
+      file.copyWith(title: 'Organic chemistry', description: 'Carbon chains'),
+    );
+    final results = await repository.searchFiles('carbon');
+    expect(results, hasLength(1));
+    expect(results.single.title, 'Organic chemistry');
+  });
+
+  test('settings persist values', () async {
+    await repository.setSetting('theme_mode', 'dark');
+    final value = await repository.getSetting('theme_mode');
+    expect(value, 'dark');
+  });
 }

@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_drawing_board/flutter_drawing_board.dart' as drawing;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
@@ -313,6 +313,22 @@ class LeccyApp extends ConsumerWidget {
   }
 }
 
+class _OpenCommandPaletteIntent extends Intent {
+  const _OpenCommandPaletteIntent();
+}
+
+class _CreateNewFileIntent extends Intent {
+  const _CreateNewFileIntent();
+}
+
+class _DeleteSelectedFileIntent extends Intent {
+  const _DeleteSelectedFileIntent();
+}
+
+class _ToggleImportantIntent extends Intent {
+  const _ToggleImportantIntent();
+}
+
 class LeccyHomePage extends ConsumerWidget {
   const LeccyHomePage({super.key});
 
@@ -332,21 +348,58 @@ class LeccyHomePage extends ConsumerWidget {
         ),
       );
     }
-    return Scaffold(
-      body: _FastModeScope(
-        enabled: app.fastMode,
-        child: Stack(
-          children: [
-            const _LiquidWallpaper(),
-            SafeArea(
-              child: Row(
-                children: [
-                  SizedBox(width: 320, child: FolderLibrary(controller: app)),
-                  Expanded(child: LectureWorkspace(controller: app)),
-                ],
-              ),
+    return Actions(
+      actions: {
+        _OpenCommandPaletteIntent: CallbackAction<_OpenCommandPaletteIntent>(
+          onInvoke: (_) => _showCommandPalette(context, app),
+        ),
+        _CreateNewFileIntent: CallbackAction<_CreateNewFileIntent>(
+          onInvoke: (_) => app.createFile(),
+        ),
+        _DeleteSelectedFileIntent: CallbackAction<_DeleteSelectedFileIntent>(
+          onInvoke: (_) => app.moveSelectedFileToTrash(),
+        ),
+        _ToggleImportantIntent: CallbackAction<_ToggleImportantIntent>(
+          onInvoke: (_) {
+            final fileId = app.selectedFileId;
+            if (fileId != null) {
+              return app.toggleFileImportant(fileId);
+            }
+            return null;
+          },
+        ),
+      },
+      child: Shortcuts(
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.keyK, control: true):
+              _OpenCommandPaletteIntent(),
+          SingleActivator(LogicalKeyboardKey.keyN, control: true):
+              _CreateNewFileIntent(),
+          SingleActivator(LogicalKeyboardKey.delete):
+              _DeleteSelectedFileIntent(),
+          SingleActivator(LogicalKeyboardKey.keyI, control: true, shift: true):
+              _ToggleImportantIntent(),
+        },
+        child: Scaffold(
+          body: _FastModeScope(
+            enabled: app.fastMode,
+            child: Stack(
+              children: [
+                const _LiquidWallpaper(),
+                SafeArea(
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 320,
+                        child: FolderLibrary(controller: app),
+                      ),
+                      Expanded(child: LectureWorkspace(controller: app)),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -416,6 +469,17 @@ class FolderLibrary extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
+                IconButton.filledTonal(
+                  tooltip: 'Search commands',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHigh,
+                  ),
+                  onPressed: () => _showCommandPalette(context, controller),
+                  icon: const Icon(Icons.search_rounded),
+                ),
+                const SizedBox(width: 8),
                 IconButton.filledTonal(
                   tooltip: 'Settings',
                   style: IconButton.styleFrom(
@@ -779,6 +843,12 @@ class FileListPanel extends StatelessWidget {
                       : controller.createStudySetFromSelection,
                   icon: const Icon(Icons.timeline_rounded),
                 ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  tooltip: 'Trash',
+                  onPressed: () => _showTrashSheet(context, controller),
+                  icon: const Icon(Icons.delete_outline_rounded),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -814,6 +884,8 @@ class FileListPanel extends StatelessWidget {
                                 controller.toggleFileSelection(file.id),
                             onToggleImportant: () =>
                                 controller.toggleFileImportant(file.id),
+                            onMoveToTrash: () =>
+                                controller.moveFileToTrash(file.id),
                           );
                         },
                       ),
@@ -836,6 +908,7 @@ class FileTile extends StatelessWidget {
     required this.onTap,
     required this.onCheck,
     required this.onToggleImportant,
+    required this.onMoveToTrash,
   });
 
   final LectureFile file;
@@ -845,6 +918,7 @@ class FileTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onCheck;
   final VoidCallback onToggleImportant;
+  final VoidCallback onMoveToTrash;
 
   @override
   Widget build(BuildContext context) {
@@ -939,6 +1013,11 @@ class FileTile extends StatelessWidget {
                           : Icons.outlined_flag_rounded,
                       color: file.isImportant ? importantColor : null,
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Move to trash',
+                    onPressed: onMoveToTrash,
+                    icon: const Icon(Icons.delete_outline_rounded),
                   ),
                   Text('${file.progressPercent}%'),
                 ],
@@ -5230,6 +5309,307 @@ void _showSheetMessage(BuildContext context, String message) {
   );
 }
 
+class _CommandPaletteSelection {
+  const _CommandPaletteSelection(this.action, {this.fileId});
+
+  final String action;
+  final int? fileId;
+}
+
+Future<void> _showCommandPalette(
+  BuildContext context,
+  AppController controller,
+) async {
+  final queryController = TextEditingController();
+  var query = '';
+  final selection = await showDialog<_CommandPaletteSelection>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Command Palette'),
+          content: SizedBox(
+            width: 620,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: queryController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Search notes or run a command',
+                    prefixIcon: Icon(Icons.search_rounded),
+                  ),
+                  onChanged: (value) => setState(() => query = value.trim()),
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: query.isEmpty
+                      ? ListView(
+                          shrinkWrap: true,
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.note_add_outlined),
+                              title: const Text('Create new file'),
+                              subtitle: const Text('Shortcut: Ctrl+N'),
+                              onTap: () => Navigator.of(
+                                dialogContext,
+                              ).pop(const _CommandPaletteSelection('new-file')),
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.upload_file_rounded),
+                              title: const Text('Export backup'),
+                              onTap: () => Navigator.of(dialogContext).pop(
+                                const _CommandPaletteSelection('export-backup'),
+                              ),
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.download_rounded),
+                              title: const Text('Import backup'),
+                              onTap: () => Navigator.of(dialogContext).pop(
+                                const _CommandPaletteSelection('import-backup'),
+                              ),
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.delete_outline_rounded),
+                              title: const Text('Open trash'),
+                              onTap: () => Navigator.of(dialogContext).pop(
+                                const _CommandPaletteSelection('open-trash'),
+                              ),
+                            ),
+                          ],
+                        )
+                      : FutureBuilder<List<LectureFile>>(
+                          future: controller.searchFiles(query),
+                          builder: (context, snapshot) {
+                            final data = snapshot.data ?? const <LectureFile>[];
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+                            if (data.isEmpty) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Text('No matching notes'),
+                                ),
+                              );
+                            }
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: data.length,
+                              itemBuilder: (context, index) {
+                                final file = data[index];
+                                return ListTile(
+                                  leading: Icon(
+                                    file.isImportant
+                                        ? Icons.flag_rounded
+                                        : Icons.article_outlined,
+                                  ),
+                                  title: Text(file.title),
+                                  subtitle: Text(
+                                    file.description.isEmpty
+                                        ? 'No description'
+                                        : file.description,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onTap: () => Navigator.of(dialogContext).pop(
+                                    _CommandPaletteSelection(
+                                      'open-file',
+                                      fileId: file.id,
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+  queryController.dispose();
+  if (selection == null) {
+    return;
+  }
+  if (!context.mounted) {
+    return;
+  }
+  switch (selection.action) {
+    case 'new-file':
+      await controller.createFile();
+    case 'export-backup':
+      await _exportAppBackup(context, controller);
+    case 'import-backup':
+      await _importAppBackup(context, controller);
+    case 'open-trash':
+      await _showTrashSheet(context, controller);
+    case 'open-file':
+      final fileId = selection.fileId;
+      if (fileId != null) {
+        await controller.openFileFromGlobalSearch(fileId);
+      }
+  }
+}
+
+Future<void> _showTrashSheet(
+  BuildContext context,
+  AppController controller,
+) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (context) {
+      return _GlassPanel(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        fastMode: controller.fastMode,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: FutureBuilder<(List<LectureFolder>, List<LectureFile>)>(
+            future:
+                Future.wait<Object>([
+                  controller.loadTrashedFolders(),
+                  controller.loadTrashedFiles(),
+                ]).then(
+                  (value) => (
+                    value[0] as List<LectureFolder>,
+                    value[1] as List<LectureFile>,
+                  ),
+                ),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const SizedBox(
+                  height: 220,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final (folders, files) = snapshot.data!;
+              return SizedBox(
+                height: 420,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Trash',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 10),
+                    if (folders.isEmpty && files.isEmpty)
+                      const Expanded(
+                        child: Center(child: Text('Trash is empty')),
+                      )
+                    else
+                      Expanded(
+                        child: ListView(
+                          children: [
+                            for (final folder in folders)
+                              ListTile(
+                                leading: const Icon(
+                                  Icons.folder_delete_outlined,
+                                ),
+                                title: Text(folder.name),
+                                subtitle: const Text('Folder'),
+                                trailing: Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Restore',
+                                      onPressed: () async {
+                                        await controller.restoreFolderFromTrash(
+                                          folder.id,
+                                        );
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                          await _showTrashSheet(
+                                            context,
+                                            controller,
+                                          );
+                                        }
+                                      },
+                                      icon: const Icon(Icons.restore_rounded),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Delete forever',
+                                      onPressed: () async {
+                                        await controller
+                                            .permanentlyDeleteFolder(folder.id);
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                          await _showTrashSheet(
+                                            context,
+                                            controller,
+                                          );
+                                        }
+                                      },
+                                      icon: const Icon(Icons.delete_forever),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            for (final file in files)
+                              ListTile(
+                                leading: const Icon(Icons.description_outlined),
+                                title: Text(file.title),
+                                subtitle: const Text('File'),
+                                trailing: Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Restore',
+                                      onPressed: () async {
+                                        await controller.restoreFileFromTrash(
+                                          file.id,
+                                        );
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                          await _showTrashSheet(
+                                            context,
+                                            controller,
+                                          );
+                                        }
+                                      },
+                                      icon: const Icon(Icons.restore_rounded),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Delete forever',
+                                      onPressed: () async {
+                                        await controller.permanentlyDeleteFile(
+                                          file.id,
+                                        );
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                          await _showTrashSheet(
+                                            context,
+                                            controller,
+                                          );
+                                        }
+                                      },
+                                      icon: const Icon(Icons.delete_forever),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    },
+  );
+}
+
 Future<void> _exportAppBackup(
   BuildContext context,
   AppController controller,
@@ -5272,10 +5652,25 @@ Future<void> _importAppBackup(
   if (file == null || bytes == null) {
     return;
   }
+  LeccyBackupBundle backup;
+  try {
+    final decoded = jsonDecode(utf8.decode(bytes));
+    if (decoded is! Map) {
+      throw const FormatException('Backup file must contain a JSON object.');
+    }
+    backup = LeccyBackupBundle.fromJson(
+      decoded.map((key, value) => MapEntry(key.toString(), value as Object?)),
+    );
+  } catch (error) {
+    if (context.mounted) {
+      _showSheetMessage(context, 'Invalid backup file: $error');
+    }
+    return;
+  }
   if (!context.mounted) {
     return;
   }
-  final mode = await _showBackupImportModeDialog(context);
+  final mode = await _showBackupImportModeDialog(context, backup);
   if (!context.mounted) {
     return;
   }
@@ -5296,13 +5691,19 @@ Future<void> _importAppBackup(
   }
 }
 
-Future<BackupImportMode?> _showBackupImportModeDialog(BuildContext context) {
+Future<BackupImportMode?> _showBackupImportModeDialog(
+  BuildContext context,
+  LeccyBackupBundle backup,
+) {
   return showDialog<BackupImportMode>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Import backup'),
-      content: const Text(
-        'Choose how to apply this backup.\n\n'
+      content: Text(
+        'This backup contains:\n'
+        '- ${backup.folders.length} folders\n'
+        '- ${backup.files.length} files\n'
+        '- ${backup.studySets.length} study sets\n\n'
         'Replace all: wipe current data and restore from backup.\n'
         'Merge as new: keep current data and append imported folders.',
       ),
@@ -5459,7 +5860,11 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                   ExpansionTile(
                     leading: const Icon(Icons.backup_rounded),
                     title: const Text('Backup & restore'),
-                    subtitle: const Text('Export or import a .leccy backup'),
+                    subtitle: Text(
+                      controller.lastBackupAt == null
+                          ? 'Export or import a .leccy/.txt backup'
+                          : 'Last backup: ${intl.DateFormat('yyyy-MM-dd HH:mm').format(controller.lastBackupAt!)}',
+                    ),
                     children: [
                       Padding(
                         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
@@ -5830,6 +6235,17 @@ class _FolderDialogState extends State<FolderDialog> {
         ),
       ),
       actions: [
+        if (widget.folder != null)
+          TextButton.icon(
+            onPressed: () async {
+              await widget.controller.moveFolderToTrash(widget.folder!.id);
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            icon: const Icon(Icons.delete_outline_rounded),
+            label: const Text('Move To Trash'),
+          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),

@@ -17,6 +17,8 @@ abstract interface class LeccyStore {
 
   Future<List<LectureFile>> filesForFolder(int folderId);
 
+  Future<List<LectureFile>> searchFiles(String query);
+
   Future<Map<int, int>> fileCountsByFolder();
 
   Future<Map<int, int>> folderProgress();
@@ -51,6 +53,26 @@ abstract interface class LeccyStore {
     required String extension,
     required String mediaType,
   });
+
+  Future<List<LectureFolder>> trashedFolders();
+
+  Future<List<LectureFile>> trashedFiles();
+
+  Future<void> moveFileToTrash(int fileId);
+
+  Future<void> restoreFileFromTrash(int fileId);
+
+  Future<void> permanentlyDeleteFile(int fileId);
+
+  Future<void> moveFolderToTrash(int folderId);
+
+  Future<void> restoreFolderFromTrash(int folderId);
+
+  Future<void> permanentlyDeleteFolder(int folderId);
+
+  Future<String?> getSetting(String key);
+
+  Future<void> setSetting(String key, String value);
 
   Future<LeccyBackupBundle> exportBackup();
 

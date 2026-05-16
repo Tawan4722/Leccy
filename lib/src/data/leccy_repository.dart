@@ -19,6 +19,7 @@ class LeccyRepository implements LeccyStore {
   Future<List<LectureFolder>> folders() async {
     final rows = await _db.query(
       'folders',
+      where: 'deleted_at IS NULL',
       orderBy: 'sort_order ASC, name COLLATE NOCASE ASC',
     );
     return rows.map(LectureFolder.fromMap).toList();
@@ -61,8 +62,25 @@ class LeccyRepository implements LeccyStore {
   Future<List<LectureFile>> filesForFolder(int folderId) async {
     final rows = await _db.query(
       'lecture_files',
-      where: 'folder_id = ?',
+      where: 'folder_id = ? AND deleted_at IS NULL',
       whereArgs: [folderId],
+      orderBy: 'updated_at DESC, title COLLATE NOCASE ASC',
+    );
+    return rows.map(LectureFile.fromMap).toList();
+  }
+
+  @override
+  Future<List<LectureFile>> searchFiles(String query) async {
+    final normalized = query.trim();
+    if (normalized.isEmpty) {
+      return const [];
+    }
+    final like = '%${normalized.toLowerCase()}%';
+    final rows = await _db.query(
+      'lecture_files',
+      where:
+          'deleted_at IS NULL AND (LOWER(title) LIKE ? OR LOWER(description) LIKE ? OR LOWER(quick_note) LIKE ? OR LOWER(content_json) LIKE ?)',
+      whereArgs: [like, like, like, like],
       orderBy: 'updated_at DESC, title COLLATE NOCASE ASC',
     );
     return rows.map(LectureFile.fromMap).toList();
@@ -73,6 +91,7 @@ class LeccyRepository implements LeccyStore {
     final rows = await _db.rawQuery('''
       SELECT folder_id, COUNT(*) AS count
       FROM lecture_files
+      WHERE deleted_at IS NULL
       GROUP BY folder_id
     ''');
     return {
@@ -85,6 +104,7 @@ class LeccyRepository implements LeccyStore {
     final rows = await _db.rawQuery('''
       SELECT folder_id, ROUND(AVG(progress_percent)) AS progress
       FROM lecture_files
+      WHERE deleted_at IS NULL
       GROUP BY folder_id
     ''');
     return {
@@ -111,6 +131,7 @@ class LeccyRepository implements LeccyStore {
       autoSummaryEnabled: false,
       summarySourceHash: null,
       summaryUpdatedAt: null,
+      deletedAt: null,
     );
     final id = await _db.insert('lecture_files', file.toMap());
     return file.copyWith(id: id);
@@ -128,22 +149,31 @@ class LeccyRepository implements LeccyStore {
 
   @override
   Future<List<StudySet>> studySetsForFolder(int folderId) async {
-    final rows = await _db.query(
-      'study_sets',
-      where: 'folder_id = ?',
-      whereArgs: [folderId],
-      orderBy: 'created_at DESC',
+    final rows = await _db.rawQuery(
+      '''
+      SELECT DISTINCT s.*
+      FROM study_sets s
+      JOIN study_set_items i ON i.study_set_id = s.id
+      JOIN lecture_files f ON f.id = i.file_id
+      WHERE s.folder_id = ? AND f.deleted_at IS NULL
+      ORDER BY s.created_at DESC
+      ''',
+      [folderId],
     );
     return rows.map(StudySet.fromMap).toList();
   }
 
   @override
   Future<List<StudySetItem>> studySetItems(int studySetId) async {
-    final rows = await _db.query(
-      'study_set_items',
-      where: 'study_set_id = ?',
-      whereArgs: [studySetId],
-      orderBy: 'item_order ASC',
+    final rows = await _db.rawQuery(
+      '''
+      SELECT i.*
+      FROM study_set_items i
+      JOIN lecture_files f ON f.id = i.file_id
+      WHERE i.study_set_id = ? AND f.deleted_at IS NULL
+      ORDER BY i.item_order ASC
+      ''',
+      [studySetId],
     );
     return rows.map(StudySetItem.fromMap).toList();
   }
@@ -247,6 +277,133 @@ class LeccyRepository implements LeccyStore {
     );
     await file.writeAsBytes(bytes, flush: true);
     return file.path;
+  }
+
+  @override
+  Future<List<LectureFolder>> trashedFolders() async {
+    final rows = await _db.query(
+      'folders',
+      where: 'deleted_at IS NOT NULL',
+      orderBy: 'deleted_at DESC',
+    );
+    return rows.map(LectureFolder.fromMap).toList();
+  }
+
+  @override
+  Future<List<LectureFile>> trashedFiles() async {
+    final rows = await _db.query(
+      'lecture_files',
+      where: 'deleted_at IS NOT NULL',
+      orderBy: 'deleted_at DESC',
+    );
+    return rows.map(LectureFile.fromMap).toList();
+  }
+
+  @override
+  Future<void> moveFileToTrash(int fileId) async {
+    await _db.update(
+      'lecture_files',
+      {
+        'deleted_at': DateTime.now().millisecondsSinceEpoch,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'id = ?',
+      whereArgs: [fileId],
+    );
+  }
+
+  @override
+  Future<void> restoreFileFromTrash(int fileId) async {
+    await _db.update(
+      'lecture_files',
+      {'deleted_at': null, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [fileId],
+    );
+  }
+
+  @override
+  Future<void> permanentlyDeleteFile(int fileId) async {
+    await _db.transaction((txn) async {
+      await txn.delete(
+        'study_set_items',
+        where: 'file_id = ?',
+        whereArgs: [fileId],
+      );
+      await txn.delete('lecture_files', where: 'id = ?', whereArgs: [fileId]);
+      await txn.execute('''
+        DELETE FROM study_sets
+        WHERE id NOT IN (
+          SELECT DISTINCT study_set_id FROM study_set_items
+        )
+      ''');
+    });
+  }
+
+  @override
+  Future<void> moveFolderToTrash(int folderId) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _db.transaction((txn) async {
+      await txn.update(
+        'folders',
+        {'deleted_at': now},
+        where: 'id = ?',
+        whereArgs: [folderId],
+      );
+      await txn.update(
+        'lecture_files',
+        {'deleted_at': now, 'updated_at': now},
+        where: 'folder_id = ?',
+        whereArgs: [folderId],
+      );
+    });
+  }
+
+  @override
+  Future<void> restoreFolderFromTrash(int folderId) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _db.transaction((txn) async {
+      await txn.update(
+        'folders',
+        {'deleted_at': null},
+        where: 'id = ?',
+        whereArgs: [folderId],
+      );
+      await txn.update(
+        'lecture_files',
+        {'deleted_at': null, 'updated_at': now},
+        where: 'folder_id = ?',
+        whereArgs: [folderId],
+      );
+    });
+  }
+
+  @override
+  Future<void> permanentlyDeleteFolder(int folderId) async {
+    await _db.delete('folders', where: 'id = ?', whereArgs: [folderId]);
+  }
+
+  @override
+  Future<String?> getSetting(String key) async {
+    final rows = await _db.query(
+      'app_settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return rows.first['value'] as String;
+  }
+
+  @override
+  Future<void> setSetting(String key, String value) async {
+    await _db.insert('app_settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   @override
