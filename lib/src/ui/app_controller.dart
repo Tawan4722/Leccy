@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../data/leccy_store.dart';
 import '../data/leccy_store_factory.dart'
     if (dart.library.io) '../data/leccy_store_factory_io.dart';
+import '../domain/backup_models.dart';
 import '../domain/models.dart';
 import '../domain/summary_service.dart';
 
@@ -523,6 +525,44 @@ class AppController extends ChangeNotifier {
       activeStudySetItems = await repository.studySetItems(activeStudySetId!);
     }
     await refreshFolderContent(keepSelection: true);
+  }
+
+  Future<Uint8List> exportBackupBytes() async {
+    final backup = await repository.exportBackup();
+    return Uint8List.fromList(utf8.encode(backup.toJsonString(pretty: true)));
+  }
+
+  Future<void> importBackupBytes(
+    Uint8List bytes, {
+    required BackupImportMode mode,
+  }) async {
+    final decoded = jsonDecode(utf8.decode(bytes));
+    if (decoded is! Map) {
+      throw const FormatException('Backup file must contain a JSON object.');
+    }
+    final backup = LeccyBackupBundle.fromJson(
+      decoded.map((key, value) => MapEntry(key.toString(), value as Object?)),
+    );
+    await repository.importBackup(backup, mode: mode);
+
+    selectedFolderId = null;
+    selectedFileId = null;
+    activeStudySetId = null;
+    activeStudySetItems = [];
+    selectedFileIds.clear();
+    fileSelectionMode = false;
+
+    await _loadFolders();
+    if (folders.isEmpty) {
+      files = [];
+      studySets = [];
+      notifyListeners();
+      return;
+    }
+
+    selectedFolderId = folders.first.id;
+    await _loadFolderContent(selectedFolderId!);
+    notifyListeners();
   }
 
   int studySetProgress(StudySet set) {

@@ -18,6 +18,7 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/leccy_store.dart';
+import '../domain/backup_models.dart';
 import '../domain/gemini_service.dart';
 import '../domain/models.dart';
 import '../domain/pptx_export_service.dart';
@@ -204,7 +205,9 @@ class LeccyApp extends ConsumerWidget {
           surface: isDark ? const Color(0xFF282522) : const Color(0xFFF4EEDD),
           onSurface: isDark ? const Color(0xFFD4C8C0) : const Color(0xFF4C3E36),
           primary: isDark ? const Color(0xFFD4A373) : const Color(0xFF967259),
-          primaryContainer: isDark ? const Color(0xFF5C4736) : const Color(0xFFE6D0C0),
+          primaryContainer: isDark
+              ? const Color(0xFF5C4736)
+              : const Color(0xFFE6D0C0),
         );
 
     return MaterialApp(
@@ -5187,6 +5190,106 @@ Future<void> _showViewOptions(
   );
 }
 
+void _showSheetMessage(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+  );
+}
+
+Future<void> _exportAppBackup(
+  BuildContext context,
+  AppController controller,
+) async {
+  try {
+    final bytes = await controller.exportBackupBytes();
+    final stamp = intl.DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final path = await FilePicker.saveFile(
+      dialogTitle: 'Export backup',
+      fileName: 'leccy_backup_$stamp.leccy',
+      type: FileType.custom,
+      allowedExtensions: const ['leccy', 'txt'],
+      bytes: bytes,
+    );
+    if (!context.mounted) {
+      return;
+    }
+    if (path != null) {
+      _showSheetMessage(context, 'Backup exported: $path');
+    }
+  } catch (error) {
+    if (!context.mounted) {
+      return;
+    }
+    _showSheetMessage(context, 'Backup export failed: $error');
+  }
+}
+
+Future<void> _importAppBackup(
+  BuildContext context,
+  AppController controller,
+) async {
+  final picked = await FilePicker.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: const ['leccy', 'txt', 'json'],
+    withData: true,
+  );
+  final file = picked?.files.single;
+  final bytes = file?.bytes;
+  if (file == null || bytes == null) {
+    return;
+  }
+  if (!context.mounted) {
+    return;
+  }
+  final mode = await _showBackupImportModeDialog(context);
+  if (!context.mounted) {
+    return;
+  }
+  if (mode == null) {
+    return;
+  }
+  try {
+    await controller.importBackupBytes(bytes, mode: mode);
+    if (!context.mounted) {
+      return;
+    }
+    _showSheetMessage(context, 'Backup imported: ${file.name}');
+  } catch (error) {
+    if (!context.mounted) {
+      return;
+    }
+    _showSheetMessage(context, 'Backup import failed: $error');
+  }
+}
+
+Future<BackupImportMode?> _showBackupImportModeDialog(BuildContext context) {
+  return showDialog<BackupImportMode>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Import backup'),
+      content: const Text(
+        'Choose how to apply this backup.\n\n'
+        'Replace all: wipe current data and restore from backup.\n'
+        'Merge as new: keep current data and append imported folders.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(BackupImportMode.merge),
+          child: const Text('Merge as new'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(BackupImportMode.replace),
+          child: const Text('Replace all'),
+        ),
+      ],
+    ),
+  );
+}
+
 void _showSettingsSheet(BuildContext context, AppController controller) {
   showModalBottomSheet<void>(
     context: context,
@@ -5315,6 +5418,37 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                             labelText: 'Enter API key',
                             prefixIcon: Icon(Icons.vpn_key_outlined),
                           ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ExpansionTile(
+                    leading: const Icon(Icons.backup_rounded),
+                    title: const Text('Backup & restore'),
+                    subtitle: const Text('Export or import a .leccy backup'),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton.tonalIcon(
+                                onPressed: () =>
+                                    _exportAppBackup(context, controller),
+                                icon: const Icon(Icons.upload_file_rounded),
+                                label: const Text('Export backup'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: FilledButton.tonalIcon(
+                                onPressed: () =>
+                                    _importAppBackup(context, controller),
+                                icon: const Icon(Icons.download_rounded),
+                                label: const Text('Import backup'),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

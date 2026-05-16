@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../domain/backup_models.dart';
 import '../domain/models.dart';
 
 abstract interface class LeccyStore {
@@ -49,6 +50,13 @@ abstract interface class LeccyStore {
     required Uint8List bytes,
     required String extension,
     required String mediaType,
+  });
+
+  Future<LeccyBackupBundle> exportBackup();
+
+  Future<void> importBackup(
+    LeccyBackupBundle backup, {
+    required BackupImportMode mode,
   });
 
   Future<void> close();
