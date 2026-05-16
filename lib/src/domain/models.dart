@@ -75,6 +75,7 @@ class LectureFile {
     required this.progressPercent,
     required this.updatedAt,
     required this.autoSummaryEnabled,
+    this.isImportant = false,
     this.summarySourceHash,
     this.summaryUpdatedAt,
   });
@@ -91,6 +92,7 @@ class LectureFile {
   final int progressPercent;
   final DateTime updatedAt;
   final bool autoSummaryEnabled;
+  final bool isImportant;
   final String? summarySourceHash;
   final DateTime? summaryUpdatedAt;
 
@@ -135,6 +137,7 @@ class LectureFile {
     int? progressPercent,
     DateTime? updatedAt,
     bool? autoSummaryEnabled,
+    bool? isImportant,
     String? summarySourceHash,
     DateTime? summaryUpdatedAt,
     bool clearSummarySourceHash = false,
@@ -153,6 +156,7 @@ class LectureFile {
       progressPercent: progressPercent ?? this.progressPercent,
       updatedAt: updatedAt ?? this.updatedAt,
       autoSummaryEnabled: autoSummaryEnabled ?? this.autoSummaryEnabled,
+      isImportant: isImportant ?? this.isImportant,
       summarySourceHash: clearSummarySourceHash
           ? null
           : summarySourceHash ?? this.summarySourceHash,
@@ -177,6 +181,7 @@ class LectureFile {
       progressPercent: map['progress_percent'] as int,
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
       autoSummaryEnabled: (map['auto_summary_enabled'] as int? ?? 0) == 1,
+      isImportant: (map['important_flag'] as int? ?? 0) == 1,
       summarySourceHash: map['summary_source_hash'] as String?,
       summaryUpdatedAt: (map['summary_updated_at'] as int?) == null
           ? null
@@ -200,6 +205,7 @@ class LectureFile {
       'progress_percent': progressPercent.clamp(0, 100),
       'updated_at': updatedAt.millisecondsSinceEpoch,
       'auto_summary_enabled': autoSummaryEnabled ? 1 : 0,
+      'important_flag': isImportant ? 1 : 0,
       'summary_source_hash': summarySourceHash,
       'summary_updated_at': summaryUpdatedAt?.millisecondsSinceEpoch,
     };

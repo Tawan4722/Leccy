@@ -812,6 +812,8 @@ class FileListPanel extends StatelessWidget {
                             onTap: () => controller.selectFile(file.id),
                             onCheck: () =>
                                 controller.toggleFileSelection(file.id),
+                            onToggleImportant: () =>
+                                controller.toggleFileImportant(file.id),
                           );
                         },
                       ),
@@ -833,6 +835,7 @@ class FileTile extends StatelessWidget {
     required this.selectionMode,
     required this.onTap,
     required this.onCheck,
+    required this.onToggleImportant,
   });
 
   final LectureFile file;
@@ -841,13 +844,18 @@ class FileTile extends StatelessWidget {
   final bool selectionMode;
   final VoidCallback onTap;
   final VoidCallback onCheck;
+  final VoidCallback onToggleImportant;
 
   @override
   Widget build(BuildContext context) {
+    final importantColor = const Color(0xFFD32F2F);
+    final importantTint = const Color(0xFFE57373);
     return _LiquidGlass(
       borderRadius: 20,
       selected: isSelected,
-      tint: Theme.of(context).colorScheme.primary,
+      tint: file.isImportant
+          ? importantTint
+          : Theme.of(context).colorScheme.primary,
       padding: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -885,7 +893,12 @@ class FileTile extends StatelessWidget {
                       file.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: file.isImportant ? importantColor : null,
+                        fontWeight: file.isImportant
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -902,13 +915,34 @@ class FileTile extends StatelessWidget {
                       child: LinearProgressIndicator(
                         minHeight: 7,
                         value: file.progressPercent / 100,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          file.isImportant
+                              ? importantColor
+                              : Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Text('${file.progressPercent}%'),
+              Column(
+                children: [
+                  IconButton(
+                    tooltip: file.isImportant
+                        ? 'Marked important'
+                        : 'Mark important',
+                    onPressed: onToggleImportant,
+                    icon: Icon(
+                      file.isImportant
+                          ? Icons.flag_rounded
+                          : Icons.outlined_flag_rounded,
+                      color: file.isImportant ? importantColor : null,
+                    ),
+                  ),
+                  Text('${file.progressPercent}%'),
+                ],
+              ),
             ],
           ),
         ),

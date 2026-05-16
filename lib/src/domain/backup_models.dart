@@ -107,6 +107,7 @@ class LeccyBackupBundle {
       progressPercent: _asInt(map['progress_percent']),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(_asInt(map['updated_at'])),
       autoSummaryEnabled: _asInt(map['auto_summary_enabled']) == 1,
+      isImportant: _asIntOrDefault(map['important_flag'], 0) == 1,
       summarySourceHash: map['summary_source_hash']?.toString(),
       summaryUpdatedAt: summaryUpdated == null
           ? null
@@ -219,6 +220,13 @@ int _asInt(Object? value) {
     }
   }
   throw const FormatException('Backup JSON has an invalid integer field.');
+}
+
+int _asIntOrDefault(Object? value, int fallback) {
+  if (value == null) {
+    return fallback;
+  }
+  return _asInt(value);
 }
 
 String _checksumFor(Map<String, Object?> value) {

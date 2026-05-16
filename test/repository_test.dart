@@ -51,6 +51,7 @@ void main() {
         description: 'Vectors and velocity',
         quickNote: 'Reviewed examples',
         progressPercent: 40,
+        isImportant: true,
       ),
     );
 
@@ -63,6 +64,7 @@ void main() {
     expect(files.single.title, 'Kinematics');
     expect(files.single.description, 'Vectors and velocity');
     expect(files.single.quickNote, 'Reviewed examples');
+    expect(files.single.isImportant, isTrue);
     expect(files.single.sheetJson, isNotEmpty);
     expect(files.single.slidesJson, isNotEmpty);
     expect(files.single.flashcardsJson, isNotEmpty);

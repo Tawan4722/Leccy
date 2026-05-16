@@ -23,7 +23,7 @@ class AppDatabase {
     final db = await dbFactory.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         onCreate: (db, version) async {
           await _createSchema(db);
         },
@@ -41,6 +41,11 @@ class AppDatabase {
           }
           if (oldVersion < 3) {
             await _addFileWorkspaceColumns(db);
+          }
+          if (oldVersion < 4) {
+            await db.execute(
+              'ALTER TABLE lecture_files ADD COLUMN important_flag INTEGER NOT NULL DEFAULT 0',
+            );
           }
         },
         onConfigure: (db) async {
@@ -85,6 +90,7 @@ class AppDatabase {
         progress_percent INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL,
         auto_summary_enabled INTEGER NOT NULL DEFAULT 0,
+        important_flag INTEGER NOT NULL DEFAULT 0,
         summary_source_hash TEXT,
         summary_updated_at INTEGER,
         FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE

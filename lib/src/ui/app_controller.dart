@@ -489,6 +489,14 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> toggleFileImportant(int fileId) async {
+    final file = files.where((item) => item.id == fileId).firstOrNull;
+    if (file == null) {
+      return;
+    }
+    await updateFile(file.copyWith(isImportant: !file.isImportant));
+  }
+
   Future<void> createStudySetFromSelection() async {
     final folderId = selectedFolderId;
     if (folderId == null || selectedFileIds.isEmpty) {
