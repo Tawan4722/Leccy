@@ -1461,6 +1461,103 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     quillController.formatSelection(attribute);
   }
 
+  quill.Line? _currentSelectionLine(quill.Node? node) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return null;
+    }
+    if (node is quill.Line) {
+      return node;
+    }
+    if (node?.parent is quill.Line) {
+      return node!.parent as quill.Line;
+    }
+    final selectionOffset = quillController.selection.baseOffset;
+    if (selectionOffset < 0) {
+      return null;
+    }
+    final child = quillController.document.queryChild(selectionOffset).node;
+    if (child is quill.Line) {
+      return child;
+    }
+    if (child?.parent is quill.Line) {
+      return child!.parent as quill.Line;
+    }
+    return null;
+  }
+
+  String _lineTextWithoutTrailingBreak(quill.Line line) {
+    final full = line.toPlainText();
+    return full.endsWith('\n') ? full.substring(0, full.length - 1) : full;
+  }
+
+  bool _isAtStartOfLine(quill.Line line, TextSelection selection) {
+    return selection.baseOffset == line.documentOffset;
+  }
+
+  void _applyHeadingLevelToLine(quill.Line line, int level) {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final attribute = switch (level) {
+      1 => quill.Attribute.h1,
+      2 => quill.Attribute.h2,
+      _ => quill.Attribute.h3,
+    };
+    quillController.formatText(line.documentOffset, line.length, attribute);
+  }
+
+  KeyEventResult? _handleOutlineKeyPressed(KeyEvent event, quill.Node? node) {
+    final quillController = _quillController;
+    if (quillController == null || event is! KeyDownEvent) {
+      return null;
+    }
+    if (HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed) {
+      return null;
+    }
+    final selection = quillController.selection;
+    if (!selection.isCollapsed || selection.baseOffset < 0) {
+      return null;
+    }
+    final line = _currentSelectionLine(node);
+    if (line == null) {
+      return null;
+    }
+    final headingLevel = _headingLevelForLine(line);
+    if (event.logicalKey == LogicalKeyboardKey.tab &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      if (headingLevel == null) {
+        if (_lineTextWithoutTrailingBreak(line).trim().isEmpty) {
+          return null;
+        }
+        _applyHeadingLevelToLine(line, 2);
+        return KeyEventResult.handled;
+      }
+      final nextLevel = switch (headingLevel) {
+        1 => 2,
+        2 => 3,
+        _ => 3,
+      };
+      _applyHeadingLevelToLine(line, nextLevel);
+      return KeyEventResult.handled;
+    }
+    final promotedLevel = switch (headingLevel) {
+      3 => 2,
+      2 => 1,
+      _ => null,
+    };
+    if (event.logicalKey == LogicalKeyboardKey.backspace &&
+        _isAtStartOfLine(line, selection) &&
+        promotedLevel != null) {
+      _applyHeadingLevelToLine(line, promotedLevel);
+      return KeyEventResult.handled;
+    }
+    return null;
+  }
+
   static const List<String> _fontSizeOrder = [
     'small',
     'normal',
@@ -2336,20 +2433,6 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           );
                         },
                       ),
-                      if (_surface == EditorSurface.note) ...[
-                        const SizedBox(width: 6),
-                        _GlassIconButton(
-                          tooltip: _showOutline
-                              ? 'Hide accordion'
-                              : 'Show accordion',
-                          selected: _showOutline,
-                          onPressed: () =>
-                              setState(() => _showOutline = !_showOutline),
-                          icon: _showOutline
-                              ? Icons.view_agenda_rounded
-                              : Icons.view_agenda_outlined,
-                        ),
-                      ],
                       const SizedBox(width: 6),
                       _GlassIconButton(
                         tooltip: widget.controller.editorFullscreen
@@ -2484,6 +2567,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               activeFontSize: _activeFontSize(),
               showFormatToolbar: _showFormatToolbar,
               isRestructuring: _isRestructuring,
+              showOutline: _showOutline,
               searchLabel: _searchController.text.trim().isEmpty
                   ? ''
                   : '${_searchOffsets.isEmpty ? 0 : _activeSearchMatch + 1}/${_searchOffsets.length}',
@@ -2505,6 +2589,8 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onRestoreRestructure: _lastRestructureBackup == null
                   ? null
                   : _restoreRestructureBackup,
+              onToggleOutline: () =>
+                  setState(() => _showOutline = !_showOutline),
               onToggleFormatToolbar: () =>
                   setState(() => _showFormatToolbar = !_showFormatToolbar),
               onSearchChanged: (_) => _refreshSearch(),
@@ -2547,6 +2633,8 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     ...FlutterQuillEmbeds.defaultEditorBuilders(),
                                     _AudioEmbedBuilder(),
                                   ],
+                                  // ignore: experimental_member_use
+                                  onKeyPressed: _handleOutlineKeyPressed,
                                   // ignore: experimental_member_use
                                   customLeadingBlockBuilder: _buildFoldLeading,
                                   customStyleBuilder: _foldStyle,
@@ -2630,6 +2718,7 @@ class _NoteActionBar extends StatelessWidget {
     required this.activeFontSize,
     required this.showFormatToolbar,
     required this.isRestructuring,
+    required this.showOutline,
     required this.searchLabel,
     required this.onHeadingSelected,
     required this.onHighlight,
@@ -2647,6 +2736,7 @@ class _NoteActionBar extends StatelessWidget {
     required this.onExportFile,
     required this.onRestructure,
     required this.onRestoreRestructure,
+    required this.onToggleOutline,
     required this.onToggleFormatToolbar,
     required this.onSearchChanged,
     required this.onSearchSubmitted,
@@ -2661,6 +2751,7 @@ class _NoteActionBar extends StatelessWidget {
   final String activeFontSize;
   final bool showFormatToolbar;
   final bool isRestructuring;
+  final bool showOutline;
   final String searchLabel;
   final ValueChanged<int?> onHeadingSelected;
   final ValueChanged<Color> onHighlight;
@@ -2678,6 +2769,7 @@ class _NoteActionBar extends StatelessWidget {
   final VoidCallback onExportFile;
   final VoidCallback onRestructure;
   final VoidCallback? onRestoreRestructure;
+  final VoidCallback onToggleOutline;
   final VoidCallback onToggleFormatToolbar;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
@@ -2825,6 +2917,17 @@ class _NoteActionBar extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(width: 8),
+                    _GlassIconButton(
+                      tooltip: showOutline
+                          ? 'Hide note accordion'
+                          : 'Show note accordion',
+                      selected: showOutline,
+                      onPressed: onToggleOutline,
+                      icon: showOutline
+                          ? Icons.view_agenda_rounded
+                          : Icons.view_agenda_outlined,
+                    ),
+                    const SizedBox(width: 4),
                     _GlassIconButton(
                       tooltip: showFormatToolbar
                           ? 'Hide formatting'
