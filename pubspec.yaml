@@ -81,7 +81,6 @@ msix_config:
   identity_name: Leccy.App
   msix_version: 1.0.0.1
   publisher: CN=Leccy
-  capabilities: internetClient, microphone
 
 
   # To add assets to your application, add an assets section, like this:
