@@ -1461,27 +1461,39 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     quillController.formatSelection(attribute);
   }
 
-  quill.Line? _currentSelectionLine(quill.Node? node) {
+  quill.Line? _currentSelectionLine(
+    quill.Node? node, {
+    bool preferNextLineWhenOnLineBreak = false,
+  }) {
     final quillController = _quillController;
     if (quillController == null) {
       return null;
+    }
+    final selectionOffset = quillController.selection.baseOffset;
+    if (selectionOffset >= 0) {
+      final query = quillController.document.queryChild(selectionOffset);
+      final queriedNode = query.node;
+      quill.Line? line;
+      if (queriedNode is quill.Line) {
+        line = queriedNode;
+      } else if (queriedNode?.parent is quill.Line) {
+        line = queriedNode!.parent as quill.Line;
+      }
+      if (line != null) {
+        final isOnLineBreak = query.offset == line.length - 1;
+        if (preferNextLineWhenOnLineBreak &&
+            isOnLineBreak &&
+            line.nextLine != null) {
+          return line.nextLine;
+        }
+        return line;
+      }
     }
     if (node is quill.Line) {
       return node;
     }
     if (node?.parent is quill.Line) {
       return node!.parent as quill.Line;
-    }
-    final selectionOffset = quillController.selection.baseOffset;
-    if (selectionOffset < 0) {
-      return null;
-    }
-    final child = quillController.document.queryChild(selectionOffset).node;
-    if (child is quill.Line) {
-      return child;
-    }
-    if (child?.parent is quill.Line) {
-      return child!.parent as quill.Line;
     }
     return null;
   }
@@ -1510,7 +1522,8 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   KeyEventResult? _handleOutlineKeyPressed(KeyEvent event, quill.Node? node) {
     final quillController = _quillController;
-    if (quillController == null || event is! KeyDownEvent) {
+    if (quillController == null ||
+        (event is! KeyDownEvent && event is! KeyRepeatEvent)) {
       return null;
     }
     if (HardwareKeyboard.instance.isAltPressed ||
@@ -1522,13 +1535,40 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (!selection.isCollapsed || selection.baseOffset < 0) {
       return null;
     }
-    final line = _currentSelectionLine(node);
+    final line = _currentSelectionLine(
+      node,
+      preferNextLineWhenOnLineBreak:
+          event.logicalKey == LogicalKeyboardKey.tab &&
+          !HardwareKeyboard.instance.isShiftPressed,
+    );
     if (line == null) {
       return null;
     }
     final headingLevel = _headingLevelForLine(line);
     if (event.logicalKey == LogicalKeyboardKey.tab &&
         !HardwareKeyboard.instance.isShiftPressed) {
+      // When caret sits on a line boundary, some platforms report the prior
+      // line offset. Retry against the next offset for Tab outline behavior.
+      if (headingLevel == null &&
+          _lineTextWithoutTrailingBreak(line).trim().isEmpty &&
+          selection.baseOffset + 1 < quillController.document.length) {
+        final retryNode = quillController.document
+            .queryChild(selection.baseOffset + 1)
+            .node;
+        final retryLine = _currentSelectionLine(retryNode);
+        if (retryLine != null) {
+          final retryHeading = _headingLevelForLine(retryLine);
+          if (retryHeading != null) {
+            final retryLevel = switch (retryHeading) {
+              1 => 2,
+              2 => 3,
+              _ => 3,
+            };
+            _applyHeadingLevelToLine(retryLine, retryLevel);
+            return KeyEventResult.handled;
+          }
+        }
+      }
       if (headingLevel == null) {
         if (_lineTextWithoutTrailingBreak(line).trim().isEmpty) {
           return null;
