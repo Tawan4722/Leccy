@@ -48,9 +48,16 @@ Leccy is packed with powerful features designed to help you organize, summarize,
 
 ## 🚀 Installation & Setup
 
+### Download for Windows
+
+Go to the [GitHub Releases page](https://github.com/Tawan4722/Leccy/releases) and download one of these files:
+
+- `Leccy-Windows-Setup.exe` - recommended installer with Start Menu and desktop shortcuts.
+- `Leccy-Windows-portable.zip` - portable build you can unzip and run directly.
+
 ### 📦 Install via Windows Setup (.exe)
 
-The easiest way to get Leccy on Windows is to compile the included installer:
+If you want to build the installer yourself:
 
 1. Download and install [Inno Setup Compiler](https://jrsoftware.org/isdl.php).
 2. Open the `LeccyInstaller.iss` file located in the root of this project.
