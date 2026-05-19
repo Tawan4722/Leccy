@@ -24,7 +24,11 @@ jobs:
           cache: true
 
       - name: Enable Windows desktop
-        run: flutter config --enable-windows-desktop
+        shell: pwsh
+        run: |
+          git config --global core.longpaths true
+          reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+          flutter config --enable-windows-desktop
 
       - name: Install dependencies
         run: flutter pub get
