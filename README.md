@@ -52,7 +52,7 @@ Leccy is packed with powerful features designed to help you organize, summarize,
 
 Go to the [GitHub Releases page](https://github.com/Tawan4722/Leccy/releases) and download one of these files:
 
-- `Leccy-Windows-Setup.exe` - recommended installer with Start Menu and desktop shortcuts.
+- `Leccy-Windows.msix` - recommended Windows app package.
 - `Leccy-Windows-portable.zip` - portable build you can unzip and run directly.
 
 ### 📦 Install via Windows Setup (.exe)
