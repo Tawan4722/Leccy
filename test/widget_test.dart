@@ -143,6 +143,32 @@ void main() {
     expect(find.text('Saved'), findsOneWidget);
   });
 
+  testWidgets('mind map adds child branch as nested heading', (tester) async {
+    final (_, quillController) = await pumpNoteEditor(
+      tester,
+      contentJson:
+          '[{"insert":"Root"},{"insert":"\\n","attributes":{"header":1}},{"insert":"Root body\\n"}]',
+    );
+
+    await tester.tap(find.byIcon(Icons.hub_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mind map'), findsOneWidget);
+    expect(find.byTooltip('Add branch'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Add branch').at(1));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Child branch');
+    await tester.tap(find.widgetWithText(FilledButton, 'Add branch'));
+    await tester.pumpAndSettle();
+
+    expect(quillController.document.toPlainText(), contains('Child branch'));
+    final ranges = computeLeccyHeadingFoldRanges(quillController.document);
+    expect(ranges.any((range) => range.headingLevel == 1), isTrue);
+    expect(ranges.any((range) => range.headingLevel == 2), isTrue);
+    await drainAutosave(tester);
+  });
+
   testWidgets('tab on body line converts it to H2', (tester) async {
     final (_, quillController) = await pumpNoteEditor(
       tester,

@@ -2008,6 +2008,61 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _addMindMapBranch(_MindMapNode parent) async {
+    final quillController = _quillController;
+    if (quillController == null) {
+      return;
+    }
+    final title = await _showMindMapBranchDialog(context);
+    if (title == null || title.trim().isEmpty || !mounted) {
+      return;
+    }
+    final childLevel = parent.level <= 0 ? 1 : (parent.level + 1).clamp(1, 6);
+    final index = _mindMapInsertOffset(
+      quillController.document,
+      parentOffset: parent.offset,
+      parentLevel: parent.level,
+    );
+    final plainText = quillController.document.toPlainText();
+    final needsPrefix =
+        index > 0 && index <= plainText.length && plainText[index - 1] != '\n';
+    final prefix = needsPrefix ? '\n' : '';
+    final cleanTitle = title.trim();
+    final headingStart = index + prefix.length;
+    quillController.replaceText(index, 0, '$prefix$cleanTitle\n', null);
+    quillController.formatText(
+      headingStart,
+      cleanTitle.length + 1,
+      _headerAttributeForLevel(childLevel),
+    );
+    quillController.moveCursorToPosition(headingStart + cleanTitle.length + 1);
+    _scheduleSave();
+    setState(() {});
+  }
+
+  int _mindMapInsertOffset(
+    quill.Document document, {
+    required int parentOffset,
+    required int parentLevel,
+  }) {
+    if (parentLevel <= 0) {
+      return math.max(0, document.length - 1);
+    }
+    final lines = _documentLines(document);
+    var foundParent = false;
+    for (final line in lines) {
+      if (!foundParent) {
+        foundParent = line.documentOffset == parentOffset;
+        continue;
+      }
+      final level = _headingLevelForLine(line);
+      if (level != null && level <= parentLevel) {
+        return line.documentOffset;
+      }
+    }
+    return math.max(0, document.length - 1);
+  }
+
   List<_OutlineSection> _buildOutlineSections(
     quill.QuillController quillController,
   ) {
@@ -2016,7 +2071,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
     void ensureFallback() {
       current ??= _OutlineSection(
-        title: 'General notes',
+        title: context.t('General notes'),
         level: 0,
         offset: 0,
         bodyLines: [],
@@ -2068,12 +2123,12 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       walk(node);
     }
     if (sections.isEmpty) {
-      return const [
+      return [
         _OutlineSection(
-          title: 'General notes',
+          title: context.t('General notes'),
           level: 0,
           offset: 0,
-          bodyLines: <String>[],
+          bodyLines: const <String>[],
         ),
       ];
     }
@@ -2500,6 +2555,10 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             icon: Icon(Icons.notes_rounded),
                           ),
                           ButtonSegment(
+                            value: EditorSurface.mindMap,
+                            icon: Icon(Icons.hub_rounded),
+                          ),
+                          ButtonSegment(
                             value: EditorSurface.sheet,
                             icon: Icon(Icons.table_chart_rounded),
                           ),
@@ -2717,6 +2776,18 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             ),
                           ),
                       ],
+                    )
+                  : _surface == EditorSurface.mindMap
+                  ? _MindMapWorkspace(
+                      rootTitle: file.title.trim().isEmpty
+                          ? context.t('Untitled lecture')
+                          : file.title,
+                      sections: _buildOutlineSections(quillController),
+                      onAddBranch: _addMindMapBranch,
+                      onJump: (offset) {
+                        _jumpToOffset(offset);
+                        setState(() => _surface = EditorSurface.note);
+                      },
                     )
                   : _surface == EditorSurface.sheet
                   ? _SheetGraphWorkspace(
@@ -3808,6 +3879,418 @@ class _DocumentOutlinePanel extends StatelessWidget {
   }
 }
 
+class _MindMapNode {
+  _MindMapNode({
+    required this.title,
+    required this.level,
+    required this.offset,
+    required this.bodyLines,
+  });
+
+  final String title;
+  final int level;
+  final int offset;
+  final List<String> bodyLines;
+  final List<_MindMapNode> children = [];
+}
+
+class _MindMapWorkspace extends StatelessWidget {
+  const _MindMapWorkspace({
+    required this.rootTitle,
+    required this.sections,
+    required this.onAddBranch,
+    required this.onJump,
+  });
+
+  final String rootTitle;
+  final List<_OutlineSection> sections;
+  final ValueChanged<_MindMapNode> onAddBranch;
+  final ValueChanged<int> onJump;
+
+  static const double _nodeWidth = 230;
+  static const double _nodeHeight = 96;
+  static const double _horizontalGap = 92;
+  static const double _verticalGap = 26;
+  static const double _margin = 32;
+
+  _MindMapNode _root() {
+    final root = _MindMapNode(
+      title: rootTitle,
+      level: 0,
+      offset: 0,
+      bodyLines: const [],
+    );
+    final stack = <_MindMapNode>[root];
+    for (final section in sections) {
+      final level = section.level <= 0 ? 1 : section.level;
+      final node = _MindMapNode(
+        title: section.title,
+        level: level,
+        offset: section.offset,
+        bodyLines: section.bodyLines,
+      );
+      while (stack.length > 1 && stack.last.level >= level) {
+        stack.removeLast();
+      }
+      stack.last.children.add(node);
+      stack.add(node);
+    }
+    return root;
+  }
+
+  _MindMapLayout _layout(_MindMapNode root, Size viewport) {
+    final positions = <_MindMapNode, Offset>{};
+    var nextY = _margin;
+    var maxDepth = 0;
+
+    double walk(_MindMapNode node, int depth) {
+      maxDepth = math.max(maxDepth, depth);
+      late final double y;
+      if (node.children.isEmpty) {
+        y = nextY;
+        nextY += _nodeHeight + _verticalGap;
+      } else {
+        final childYs = [
+          for (final child in node.children) walk(child, depth + 1),
+        ];
+        y = (childYs.first + childYs.last) / 2;
+      }
+      positions[node] = Offset(
+        _margin + depth * (_nodeWidth + _horizontalGap),
+        y,
+      );
+      return y;
+    }
+
+    walk(root, 0);
+    return _MindMapLayout(
+      root: root,
+      positions: positions,
+      size: Size(
+        math.max(
+          viewport.width,
+          (_margin * 2) +
+              ((maxDepth + 1) * _nodeWidth) +
+              (maxDepth * _horizontalGap),
+        ),
+        math.max(viewport.height, nextY + _margin),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final root = _root();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final layout = _layout(
+          root,
+          Size(constraints.maxWidth, constraints.maxHeight),
+        );
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerLowest.withValues(alpha: 0.7),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 14,
+                  top: 12,
+                  child: _LiquidGlass(
+                    borderRadius: 18,
+                    blur: 12,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.hub_rounded, size: 16),
+                        const SizedBox(width: 6),
+                        Text(context.t('Mind map')),
+                        const SizedBox(width: 12),
+                        Text(
+                          context.t('Tap a node to jump to that section.'),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                InteractiveViewer(
+                  constrained: false,
+                  minScale: 0.65,
+                  maxScale: 2.4,
+                  boundaryMargin: const EdgeInsets.all(280),
+                  child: SizedBox(
+                    width: layout.size.width,
+                    height: layout.size.height,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: _MindMapLinesPainter(
+                              layout: layout,
+                              lineColor: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.46),
+                              nodeWidth: _nodeWidth,
+                              nodeHeight: _nodeHeight,
+                            ),
+                          ),
+                        ),
+                        for (final entry in layout.positions.entries)
+                          Positioned(
+                            left: entry.value.dx,
+                            top: entry.value.dy,
+                            width: _nodeWidth,
+                            height: _nodeHeight,
+                            child: _MindMapCard(
+                              node: entry.key,
+                              isRoot: entry.key == root,
+                              onAddBranch: () => onAddBranch(entry.key),
+                              onTap: () => onJump(entry.key.offset),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MindMapLayout {
+  const _MindMapLayout({
+    required this.root,
+    required this.positions,
+    required this.size,
+  });
+
+  final _MindMapNode root;
+  final Map<_MindMapNode, Offset> positions;
+  final Size size;
+}
+
+class _MindMapLinesPainter extends CustomPainter {
+  const _MindMapLinesPainter({
+    required this.layout,
+    required this.lineColor,
+    required this.nodeWidth,
+    required this.nodeHeight,
+  });
+
+  final _MindMapLayout layout;
+  final Color lineColor;
+  final double nodeWidth;
+  final double nodeHeight;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    void drawLinks(_MindMapNode node) {
+      final from = layout.positions[node];
+      if (from == null) {
+        return;
+      }
+      final start = Offset(from.dx + nodeWidth, from.dy + nodeHeight / 2);
+      for (final child in node.children) {
+        final to = layout.positions[child];
+        if (to == null) {
+          continue;
+        }
+        final end = Offset(to.dx, to.dy + nodeHeight / 2);
+        final midX = (start.dx + end.dx) / 2;
+        final path = Path()
+          ..moveTo(start.dx, start.dy)
+          ..cubicTo(midX, start.dy, midX, end.dy, end.dx, end.dy);
+        canvas.drawPath(path, paint);
+        drawLinks(child);
+      }
+    }
+
+    drawLinks(layout.root);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MindMapLinesPainter oldDelegate) {
+    return oldDelegate.layout != layout ||
+        oldDelegate.lineColor != lineColor ||
+        oldDelegate.nodeWidth != nodeWidth ||
+        oldDelegate.nodeHeight != nodeHeight;
+  }
+}
+
+Future<String?> _showMindMapBranchDialog(BuildContext context) async {
+  return showDialog<String>(
+    context: context,
+    builder: (context) => const _MindMapBranchDialog(),
+  );
+}
+
+class _MindMapBranchDialog extends StatefulWidget {
+  const _MindMapBranchDialog();
+
+  @override
+  State<_MindMapBranchDialog> createState() => _MindMapBranchDialogState();
+}
+
+class _MindMapBranchDialogState extends State<_MindMapBranchDialog> {
+  final controller = TextEditingController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(context.t('New branch')),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: context.t('Branch title'),
+          prefixIcon: const Icon(Icons.hub_rounded),
+        ),
+        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(context.t('Cancel')),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+          icon: const Icon(Icons.add_rounded),
+          label: Text(context.t('Add branch')),
+        ),
+      ],
+    );
+  }
+}
+
+class _MindMapCard extends StatelessWidget {
+  const _MindMapCard({
+    required this.node,
+    required this.isRoot,
+    required this.onAddBranch,
+    required this.onTap,
+  });
+
+  final _MindMapNode node;
+  final bool isRoot;
+  final VoidCallback onAddBranch;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = isRoot
+        ? scheme.primaryContainer
+        : Color.lerp(
+            scheme.secondaryContainer,
+            scheme.tertiaryContainer,
+            (node.level.clamp(1, 4) - 1) / 3,
+          )!;
+    final subtitle = node.children.isNotEmpty
+        ? context.t('{count} branches', {'count': node.children.length})
+        : node.bodyLines.isNotEmpty
+        ? node.bodyLines.first
+        : context.t('No branches yet');
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: tint.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.outlineVariant),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isRoot ? Icons.radio_button_checked_rounded : Icons.circle,
+                size: isRoot ? 22 : 12,
+                color: scheme.onPrimaryContainer,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      node.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: scheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onPrimaryContainer.withValues(
+                          alpha: 0.72,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: context.t('Add branch'),
+                child: IconButton.filledTonal(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  onPressed: onAddBranch,
+                  icon: const Icon(Icons.add_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SheetGraphWorkspace extends StatefulWidget {
   const _SheetGraphWorkspace({
     required this.file,
@@ -4429,7 +4912,7 @@ class _FlashcardWorkspace extends StatelessWidget {
   }
 }
 
-enum EditorSurface { note, sheet, slides, flashcards, table, graph }
+enum EditorSurface { note, mindMap, sheet, slides, flashcards, table, graph }
 
 class ProgressPanel extends StatelessWidget {
   const ProgressPanel({super.key, required this.controller});
