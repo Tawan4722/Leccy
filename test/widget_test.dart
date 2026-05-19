@@ -124,6 +124,61 @@ void main() {
     expect(find.byTooltip('New folder'), findsOneWidget);
   });
 
+  testWidgets('empty file title is shown as untitled lecture in file list', (
+    tester,
+  ) async {
+    final controller = AppController(repository: MemoryLeccyStore())
+      ..isLoading = false
+      ..selectedFolderId = 1
+      ..selectedFileId = 1
+      ..files = [
+        LectureFile(
+          id: 1,
+          folderId: 1,
+          title: '',
+          description: '',
+          contentJson: LectureFile.emptyDocumentJson(),
+          quickNote: '',
+          sheetJson: LectureFile.emptySheetJson(),
+          slidesJson: LectureFile.emptySlidesJson(),
+          flashcardsJson: LectureFile.emptyFlashcardsJson(),
+          progressPercent: 0,
+          updatedAt: DateTime(2026),
+          autoSummaryEnabled: false,
+        ),
+      ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          quill.FlutterQuillLocalizations.delegate,
+        ],
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: SizedBox(
+            width: 1000,
+            height: 800,
+            child: FileListPanel(
+              controller: controller,
+              folder: const LectureFolder(
+                id: 1,
+                name: 'Biology',
+                colorValue: 0xFF596F62,
+                badge: 'BIO',
+                sortOrder: 1,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Untitled lecture'), findsOneWidget);
+  });
+
   testWidgets('note editor heading fold toggles without marking draft dirty', (
     tester,
   ) async {

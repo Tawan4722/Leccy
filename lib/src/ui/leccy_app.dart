@@ -190,6 +190,11 @@ String _fontPresetLabel(AppFontPreset preset) {
   };
 }
 
+String _displayLectureTitle(BuildContext context, String title) {
+  final trimmed = title.trim();
+  return trimmed.isEmpty ? context.t('Untitled lecture') : trimmed;
+}
+
 class LeccyApp extends ConsumerWidget {
   const LeccyApp({super.key});
 
@@ -967,7 +972,7 @@ class FileTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      file.title,
+                      _displayLectureTitle(context, file.title),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -2781,7 +2786,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   ? _MindMapWorkspace(
                       rootTitle: file.title.trim().isEmpty
                           ? context.t('Untitled lecture')
-                          : file.title,
+                          : _displayLectureTitle(context, file.title),
                       sections: _buildOutlineSections(quillController),
                       onAddBranch: _addMindMapBranch,
                       onJump: (offset) {
@@ -5043,7 +5048,7 @@ class StudySetDetails extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              file.title,
+                              _displayLectureTitle(context, file.title),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -6094,7 +6099,9 @@ Future<void> _showCommandPalette(
                                         ? Icons.flag_rounded
                                         : Icons.article_outlined,
                                   ),
-                                  title: Text(file.title),
+                                  title: Text(
+                                    _displayLectureTitle(context, file.title),
+                                  ),
                                   subtitle: Text(
                                     file.description.isEmpty
                                         ? context.t('No description')
@@ -6242,7 +6249,9 @@ Future<void> _showTrashSheet(
                             for (final file in files)
                               ListTile(
                                 leading: const Icon(Icons.description_outlined),
-                                title: Text(file.title),
+                                title: Text(
+                                  _displayLectureTitle(context, file.title),
+                                ),
                                 subtitle: Text(context.t('File')),
                                 trailing: Wrap(
                                   spacing: 8,
