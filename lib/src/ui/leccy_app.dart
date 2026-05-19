@@ -23,6 +23,7 @@ import '../domain/gemini_service.dart';
 import '../domain/models.dart';
 import '../domain/pptx_export_service.dart';
 import 'app_controller.dart';
+import 'app_localizations.dart';
 import 'cover_image_provider.dart'
     if (dart.library.io) 'cover_image_provider_io.dart';
 import 'voice_recording_target.dart'
@@ -213,6 +214,8 @@ class LeccyApp extends ConsumerWidget {
     return MaterialApp(
       title: 'Leccy',
       debugShowCheckedModeBanner: false,
+      locale: Locale(app.language.name),
+      supportedLocales: const [Locale('en'), Locale('th')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
@@ -459,7 +462,7 @@ class FolderLibrary extends StatelessWidget {
                           ),
                     ),
                     Text(
-                      'Workspace',
+                      context.t('Workspace'),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(
                           context,
@@ -470,7 +473,7 @@ class FolderLibrary extends StatelessWidget {
                 ),
                 const Spacer(),
                 IconButton.filledTonal(
-                  tooltip: 'Search commands',
+                  tooltip: context.t('Search commands'),
                   style: IconButton.styleFrom(
                     backgroundColor: Theme.of(
                       context,
@@ -481,7 +484,7 @@ class FolderLibrary extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  tooltip: 'Settings',
+                  tooltip: context.t('Settings'),
                   style: IconButton.styleFrom(
                     backgroundColor: Theme.of(
                       context,
@@ -492,7 +495,7 @@ class FolderLibrary extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  tooltip: 'New folder',
+                  tooltip: context.t('New folder'),
                   style: IconButton.styleFrom(
                     backgroundColor: Theme.of(
                       context,
@@ -510,7 +513,7 @@ class FolderLibrary extends StatelessWidget {
                   child: TextField(
                     onChanged: controller.setSearchQuery,
                     decoration: InputDecoration(
-                      hintText: 'Search...',
+                      hintText: context.t('Search...'),
                       prefixIcon: const Icon(Icons.search_rounded, size: 20),
                       filled: true,
                       fillColor: Theme.of(context)
@@ -530,7 +533,7 @@ class FolderLibrary extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 IconButton.filledTonal(
-                  tooltip: 'Sort/View',
+                  tooltip: context.t('Sort/View'),
                   onPressed: () => _showViewOptions(context, controller),
                   icon: const Icon(Icons.filter_list_rounded),
                 ),
@@ -541,8 +544,8 @@ class FolderLibrary extends StatelessWidget {
               child: folders.isEmpty
                   ? EmptyState(
                       icon: Icons.folder_open_rounded,
-                      title: 'No folders yet',
-                      actionLabel: 'Create folder',
+                      title: context.t('No folders yet'),
+                      actionLabel: context.t('Create folder'),
                       onAction: () => _showFolderDialog(context, controller),
                     )
                   : controller.isGrid
@@ -666,7 +669,7 @@ class FolderTile extends StatelessWidget {
                       top: 6,
                       right: 6,
                       child: _GlassIconButton(
-                        tooltip: 'Customize folder',
+                        tooltip: context.t('Customize folder'),
                         icon: Icons.tune_rounded,
                         onPressed: onEdit,
                         size: 30,
@@ -691,7 +694,7 @@ class FolderTile extends StatelessWidget {
                 ],
               ),
               Text(
-                '$fileCount files',
+                context.filesCount(fileCount),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -715,8 +718,8 @@ class LectureWorkspace extends StatelessWidget {
     if (folder == null) {
       return EmptyState(
         icon: Icons.dashboard_customize_outlined,
-        title: 'Create a folder to start',
-        actionLabel: 'New folder',
+        title: context.t('Create a folder to start'),
+        actionLabel: context.t('New folder'),
         onAction: () => _showFolderDialog(context, controller),
       );
     }
@@ -724,7 +727,7 @@ class LectureWorkspace extends StatelessWidget {
       children: [
         if (!controller.showLeftPane && !controller.editorFullscreen)
           IconButton.filledTonal(
-            tooltip: 'Open left panel',
+            tooltip: context.t('Open left panel'),
             onPressed: () => controller.setLeftPaneVisible(true),
             icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
           ),
@@ -736,13 +739,13 @@ class LectureWorkspace extends StatelessWidget {
         if (controller.showLeftPane && !controller.editorFullscreen)
           _PaneHandle(
             onDrag: controller.resizeLeftPane,
-            tooltip: 'Resize left panel',
+            tooltip: context.t('Resize left panel'),
           ),
         Expanded(child: NoteEditor(controller: controller)),
         if (controller.showRightPane && !controller.editorFullscreen)
           _PaneHandle(
             onDrag: (delta) => controller.resizeRightPane(-delta),
-            tooltip: 'Resize right panel',
+            tooltip: context.t('Resize right panel'),
           ),
         if (controller.showRightPane && !controller.editorFullscreen)
           SizedBox(
@@ -751,7 +754,7 @@ class LectureWorkspace extends StatelessWidget {
           ),
         if (!controller.showRightPane && !controller.editorFullscreen)
           IconButton.filledTonal(
-            tooltip: 'Open right panel',
+            tooltip: context.t('Open right panel'),
             onPressed: () => controller.setRightPaneVisible(true),
             icon: const Icon(Icons.keyboard_double_arrow_left_rounded),
           ),
@@ -790,7 +793,7 @@ class FileListPanel extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Close left panel',
+                  tooltip: context.t('Close left panel'),
                   onPressed: () => controller.setLeftPaneVisible(false),
                   icon: const Icon(Icons.close_rounded),
                 ),
@@ -804,7 +807,7 @@ class FileListPanel extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'Lecture files',
+              context.t('Lecture files'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -816,14 +819,14 @@ class FileListPanel extends StatelessWidget {
                   child: FilledButton.icon(
                     onPressed: controller.createFile,
                     icon: const Icon(Icons.note_add_outlined),
-                    label: const Text('New file'),
+                    label: Text(context.t('New file')),
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
                   tooltip: controller.fileSelectionMode
-                      ? 'Exit selection mode'
-                      : 'Select lectures',
+                      ? context.t('Exit selection mode')
+                      : context.t('Select lectures'),
                   onPressed: () => controller.setFileSelectionMode(
                     !controller.fileSelectionMode,
                   ),
@@ -835,7 +838,7 @@ class FileListPanel extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  tooltip: 'Create progress set',
+                  tooltip: context.t('Create progress set'),
                   onPressed:
                       !controller.fileSelectionMode ||
                           controller.selectedFileIds.isEmpty
@@ -845,7 +848,7 @@ class FileListPanel extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  tooltip: 'Trash',
+                  tooltip: context.t('Trash'),
                   onPressed: () => _showTrashSheet(context, controller),
                   icon: const Icon(Icons.delete_outline_rounded),
                 ),
@@ -856,8 +859,8 @@ class FileListPanel extends StatelessWidget {
               child: files.isEmpty
                   ? EmptyState(
                       icon: Icons.note_alt_outlined,
-                      title: 'No files in this folder',
-                      actionLabel: 'Create file',
+                      title: context.t('No files in this folder'),
+                      actionLabel: context.t('Create file'),
                       onAction: controller.createFile,
                     )
                   : AnimatedSwitcher(
@@ -977,7 +980,7 @@ class FileTile extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       file.description.isEmpty
-                          ? 'No description'
+                          ? context.t('No description')
                           : file.description,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -1004,8 +1007,8 @@ class FileTile extends StatelessWidget {
                 children: [
                   IconButton(
                     tooltip: file.isImportant
-                        ? 'Marked important'
-                        : 'Mark important',
+                        ? context.t('Marked important')
+                        : context.t('Mark important'),
                     onPressed: onToggleImportant,
                     icon: Icon(
                       file.isImportant
@@ -1015,7 +1018,7 @@ class FileTile extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Move to trash',
+                    tooltip: context.t('Move to trash'),
                     onPressed: onMoveToTrash,
                     icon: const Icon(Icons.delete_outline_rounded),
                   ),
@@ -1277,7 +1280,9 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return SizedBox(
       width: 32,
       child: IconButton(
-        tooltip: isCollapsed ? 'Expand section' : 'Collapse section',
+        tooltip: isCollapsed
+            ? context.t('Expand section')
+            : context.t('Collapse section'),
         visualDensity: VisualDensity.compact,
         padding: EdgeInsets.zero,
         iconSize: 20,
@@ -2431,8 +2436,8 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (file == null || quillController == null) {
       return EmptyState(
         icon: Icons.edit_note_rounded,
-        title: 'Choose or create a lecture file',
-        actionLabel: 'New file',
+        title: context.t('Choose or create a lecture file'),
+        actionLabel: context.t('New file'),
         onAction: widget.controller.createFile,
       );
     }
@@ -2449,9 +2454,9 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   controller: _titleController,
                   onChanged: (_) => _scheduleSave(),
                   style: Theme.of(context).textTheme.titleLarge,
-                  decoration: const InputDecoration(
-                    hintText: 'Untitled lecture',
-                    prefixIcon: Icon(Icons.title_rounded),
+                  decoration: InputDecoration(
+                    hintText: context.t('Untitled lecture'),
+                    prefixIcon: const Icon(Icons.title_rounded),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -2476,8 +2481,8 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       const SizedBox(width: 6),
                       _GlassIconButton(
                         tooltip: widget.controller.editorFullscreen
-                            ? 'Exit fullscreen'
-                            : 'Fullscreen editor',
+                            ? context.t('Exit fullscreen')
+                            : context.t('Fullscreen editor'),
                         selected: widget.controller.editorFullscreen,
                         onPressed: widget.controller.toggleEditorFullscreen,
                         icon: widget.controller.editorFullscreen
@@ -2519,7 +2524,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: const EdgeInsets.only(top: 4, bottom: 4),
                   leading: const Icon(Icons.subject_rounded),
-                  title: const Text('Details'),
+                  title: Text(context.t('Details')),
                   children: [
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2539,9 +2544,9 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             },
                             minLines: 2,
                             maxLines: 3,
-                            decoration: const InputDecoration(
-                              labelText: 'Description',
-                              prefixIcon: Icon(Icons.notes_outlined),
+                            decoration: InputDecoration(
+                              labelText: context.t('Description'),
+                              prefixIcon: const Icon(Icons.notes_outlined),
                             ),
                           ),
                         ),
@@ -2553,9 +2558,11 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             onChanged: (_) => _scheduleSave(),
                             minLines: 2,
                             maxLines: 3,
-                            decoration: const InputDecoration(
-                              labelText: 'Doing now',
-                              prefixIcon: Icon(Icons.sticky_note_2_outlined),
+                            decoration: InputDecoration(
+                              labelText: context.t('Doing now'),
+                              prefixIcon: const Icon(
+                                Icons.sticky_note_2_outlined,
+                              ),
                             ),
                           ),
                         ),
@@ -2571,12 +2578,16 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     : _generateSummaryNow,
                                 icon: const Icon(Icons.auto_awesome_rounded),
                                 label: Text(
-                                  _isSummarizing ? 'Summarizing' : 'Summary',
+                                  _isSummarizing
+                                      ? context.t('Summarizing')
+                                      : context.t('Summary'),
                                 ),
                               ),
                               Row(
                                 children: [
-                                  const Expanded(child: Text('Auto summary')),
+                                  Expanded(
+                                    child: Text(context.t('Auto summary')),
+                                  ),
                                   Switch(
                                     value: file.autoSummaryEnabled,
                                     onChanged: (value) {
@@ -2667,7 +2678,9 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                               child: quill.QuillEditor.basic(
                                 controller: quillController,
                                 config: quill.QuillEditorConfig(
-                                  placeholder: 'Write the lecture note here...',
+                                  placeholder: context.t(
+                                    'Write the lecture note here...',
+                                  ),
                                   padding: EdgeInsets.zero,
                                   embedBuilders: [
                                     ...FlutterQuillEmbeds.defaultEditorBuilders(),
@@ -2840,10 +2853,10 @@ class _NoteActionBar extends StatelessWidget {
                       style: SegmentedButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                       ),
-                      segments: const [
-                        ButtonSegment(value: 1, label: Text('H1')),
-                        ButtonSegment(value: 2, label: Text('H2')),
-                        ButtonSegment(value: 0, label: Text('Body')),
+                      segments: [
+                        const ButtonSegment(value: 1, label: Text('H1')),
+                        const ButtonSegment(value: 2, label: Text('H2')),
+                        ButtonSegment(value: 0, label: Text(context.t('Body'))),
                       ],
                       selected: const <int>{},
                       emptySelectionAllowed: true,
@@ -2863,20 +2876,20 @@ class _NoteActionBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     _GlassIconButton(
-                      tooltip: 'Apply marker',
+                      tooltip: context.t('Apply marker'),
                       onPressed: () => onHighlight(activeMarkerColor),
                       icon: Icons.draw_rounded,
                       size: 36,
                       iconSize: 18,
                     ),
                     IconButton(
-                      tooltip: 'Clear marker',
+                      tooltip: context.t('Clear marker'),
                       onPressed: onClearHighlight,
                       icon: const Icon(Icons.format_color_reset_rounded),
                     ),
                     const SizedBox(width: 8),
                     _FontStepButton(
-                      tooltip: 'Smaller text',
+                      tooltip: context.t('Smaller text'),
                       label: 'A-',
                       onPressed: onDecreaseFontSize,
                     ),
@@ -2885,41 +2898,41 @@ class _NoteActionBar extends StatelessWidget {
                       onSelected: onFontSizeSelected,
                     ),
                     _FontStepButton(
-                      tooltip: 'Bigger text',
+                      tooltip: context.t('Bigger text'),
                       label: 'A+',
                       onPressed: onIncreaseFontSize,
                     ),
                     const SizedBox(width: 8),
                     _GlassIconButton(
-                      tooltip: 'Insert picture',
+                      tooltip: context.t('Insert picture'),
                       onPressed: onInsertImage,
                       icon: Icons.image_outlined,
                       size: 36,
                       iconSize: 18,
                     ),
                     _GlassIconButton(
-                      tooltip: 'Insert video',
+                      tooltip: context.t('Insert video'),
                       onPressed: onInsertVideo,
                       icon: Icons.video_file_outlined,
                       size: 36,
                       iconSize: 18,
                     ),
                     _GlassIconButton(
-                      tooltip: 'Draw',
+                      tooltip: context.t('Draw'),
                       onPressed: onInsertDrawing,
                       icon: Icons.gesture_rounded,
                       size: 36,
                       iconSize: 18,
                     ),
                     _GlassIconButton(
-                      tooltip: 'Insert link',
+                      tooltip: context.t('Insert link'),
                       onPressed: onInsertLink,
                       icon: Icons.link_rounded,
                       size: 36,
                       iconSize: 18,
                     ),
                     _GlassIconButton(
-                      tooltip: 'Record voice',
+                      tooltip: context.t('Record voice'),
                       onPressed: onRecordVoice,
                       icon: Icons.mic_rounded,
                       size: 36,
@@ -2927,14 +2940,16 @@ class _NoteActionBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     _GlassIconButton(
-                      tooltip: 'Import txt, markdown, json, or leccy',
+                      tooltip: context.t(
+                        'Import txt, markdown, json, or leccy',
+                      ),
                       onPressed: onImportFile,
                       icon: Icons.upload_file_rounded,
                       size: 36,
                       iconSize: 18,
                     ),
                     _GlassIconButton(
-                      tooltip: 'Export lecture',
+                      tooltip: context.t('Export lecture'),
                       onPressed: onExportFile,
                       icon: Icons.download_rounded,
                       size: 36,
@@ -2945,7 +2960,9 @@ class _NoteActionBar extends StatelessWidget {
                       onPressed: isRestructuring ? null : onRestructure,
                       icon: const Icon(Icons.account_tree_rounded, size: 18),
                       label: Text(
-                        isRestructuring ? 'Structuring' : 'Restructure',
+                        isRestructuring
+                            ? context.t('Structuring')
+                            : context.t('Restructure'),
                       ),
                     ),
                     if (onRestoreRestructure != null) ...[
@@ -2953,14 +2970,14 @@ class _NoteActionBar extends StatelessWidget {
                       TextButton.icon(
                         onPressed: onRestoreRestructure,
                         icon: const Icon(Icons.restore_rounded, size: 18),
-                        label: const Text('Restore original'),
+                        label: Text(context.t('Restore original')),
                       ),
                     ],
                     const SizedBox(width: 8),
                     _GlassIconButton(
                       tooltip: showOutline
-                          ? 'Hide note accordion'
-                          : 'Show note accordion',
+                          ? context.t('Hide note accordion')
+                          : context.t('Show note accordion'),
                       selected: showOutline,
                       onPressed: onToggleOutline,
                       icon: showOutline
@@ -2970,8 +2987,8 @@ class _NoteActionBar extends StatelessWidget {
                     const SizedBox(width: 4),
                     _GlassIconButton(
                       tooltip: showFormatToolbar
-                          ? 'Hide formatting'
-                          : 'Show formatting',
+                          ? context.t('Hide formatting')
+                          : context.t('Show formatting'),
                       selected: showFormatToolbar,
                       onPressed: onToggleFormatToolbar,
                       icon: showFormatToolbar
@@ -2986,19 +3003,19 @@ class _NoteActionBar extends StatelessWidget {
                         onChanged: onSearchChanged,
                         onSubmitted: onSearchSubmitted,
                         decoration: InputDecoration(
-                          hintText: 'Search',
+                          hintText: context.t('Search'),
                           prefixIcon: const Icon(Icons.search_rounded),
                           suffixText: searchLabel,
                         ),
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Previous match',
+                      tooltip: context.t('Previous match'),
                       onPressed: onPreviousSearch,
                       icon: const Icon(Icons.keyboard_arrow_up_rounded),
                     ),
                     IconButton(
-                      tooltip: 'Next match',
+                      tooltip: context.t('Next match'),
                       onPressed: onNextSearch,
                       icon: const Icon(Icons.keyboard_arrow_down_rounded),
                     ),
@@ -3040,7 +3057,7 @@ class _MarkerPickerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<Color>(
-      tooltip: 'Marker color',
+      tooltip: context.t('Marker color'),
       onSelected: onPick,
       itemBuilder: (context) => [
         for (final color in colors)
@@ -3105,13 +3122,13 @@ class _FontSizePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      tooltip: 'Font size',
+      tooltip: context.t('Font size'),
       onSelected: onSelected,
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'small', child: Text('Small')),
-        PopupMenuItem(value: 'normal', child: Text('Normal')),
-        PopupMenuItem(value: 'large', child: Text('Large')),
-        PopupMenuItem(value: 'huge', child: Text('Huge')),
+      itemBuilder: (context) => [
+        PopupMenuItem(value: 'small', child: Text(context.t('Small'))),
+        PopupMenuItem(value: 'normal', child: Text(context.t('Normal'))),
+        PopupMenuItem(value: 'large', child: Text(context.t('Large'))),
+        PopupMenuItem(value: 'huge', child: Text(context.t('Huge'))),
       ],
       child: _LiquidGlass(
         borderRadius: 18,
@@ -3121,10 +3138,10 @@ class _FontSizePicker extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(switch (value) {
-              'small' => 'Small',
-              'large' => 'Large',
-              'huge' => 'Huge',
-              _ => 'Normal',
+              'small' => context.t('Small'),
+              'large' => context.t('Large'),
+              'huge' => context.t('Huge'),
+              _ => context.t('Normal'),
             }, style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(width: 4),
             const Icon(Icons.expand_more_rounded, size: 16),
@@ -3206,7 +3223,7 @@ class _LinkDialogState extends State<_LinkDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Insert link'),
+      title: Text(context.t('Insert link')),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -3214,15 +3231,15 @@ class _LinkDialogState extends State<_LinkDialog> {
           children: [
             TextField(
               controller: _urlController,
-              decoration: const InputDecoration(
-                labelText: 'URL',
+              decoration: InputDecoration(
+                labelText: context.t('URL'),
                 hintText: 'https://example.com',
               ),
             ),
             const SizedBox(height: 10),
             TextField(
               controller: _labelController,
-              decoration: const InputDecoration(labelText: 'Label'),
+              decoration: InputDecoration(labelText: context.t('Label')),
             ),
           ],
         ),
@@ -3230,7 +3247,7 @@ class _LinkDialogState extends State<_LinkDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.t('Cancel')),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(
@@ -3239,7 +3256,7 @@ class _LinkDialogState extends State<_LinkDialog> {
               label: _labelController.text.trim(),
             ),
           ),
-          child: const Text('Insert'),
+          child: Text(context.t('Insert')),
         ),
       ],
     );
@@ -3305,15 +3322,18 @@ class _DrawingDialogState extends State<_DrawingDialog> {
               child: Row(
                 children: [
                   Text(
-                    'Drawing',
+                    context.t('Drawing'),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const Spacer(),
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(context.t('Cancel')),
                   ),
-                  FilledButton(onPressed: _insert, child: const Text('Insert')),
+                  FilledButton(
+                    onPressed: _insert,
+                    child: Text(context.t('Insert')),
+                  ),
                 ],
               ),
             ),
@@ -3359,28 +3379,30 @@ class _ExportDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SimpleDialog(
-      title: const Text('Export lecture'),
+      title: Text(context.t('Export lecture')),
       children: [
         SimpleDialogOption(
           onPressed: () => Navigator.of(context).pop(_ExportFormat.text),
-          child: const ListTile(
-            leading: Icon(Icons.text_snippet_outlined),
-            title: Text('Plain text (.txt)'),
+          child: ListTile(
+            leading: const Icon(Icons.text_snippet_outlined),
+            title: Text(context.t('Plain text (.txt)')),
           ),
         ),
         SimpleDialogOption(
           onPressed: () => Navigator.of(context).pop(_ExportFormat.markdown),
-          child: const ListTile(
-            leading: Icon(Icons.notes_rounded),
-            title: Text('Markdown text (.md)'),
+          child: ListTile(
+            leading: const Icon(Icons.notes_rounded),
+            title: Text(context.t('Markdown text (.md)')),
           ),
         ),
         SimpleDialogOption(
           onPressed: () => Navigator.of(context).pop(_ExportFormat.leccy),
-          child: const ListTile(
-            leading: Icon(Icons.inventory_2_outlined),
-            title: Text('Leccy package (.leccy)'),
-            subtitle: Text('Includes notes, sheet, slides, and flashcards'),
+          child: ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(context.t('Leccy package (.leccy)')),
+            subtitle: Text(
+              context.t('Includes notes, sheet, slides, and flashcards'),
+            ),
           ),
         ),
       ],
@@ -3412,9 +3434,10 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
   }
 
   Future<void> _start() async {
+    final deniedMessage = context.t('Microphone permission was denied.');
     final allowed = await _recorder.hasPermission();
     if (!allowed) {
-      _showLocalMessage('Microphone permission was denied.');
+      _showLocalMessage(deniedMessage);
       return;
     }
     final path = await buildVoiceRecordingPath('wav');
@@ -3435,11 +3458,12 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
   }
 
   Future<void> _stopAndInsert() async {
+    final noRecordingMessage = context.t('No recording was saved.');
     setState(() => _isSaving = true);
     _timer?.cancel();
     final path = await _recorder.stop();
     if (path == null || path.isEmpty) {
-      _showLocalMessage('No recording was saved.');
+      _showLocalMessage(noRecordingMessage);
       if (mounted) {
         setState(() {
           _isSaving = false;
@@ -3483,7 +3507,7 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Record voice note'),
+      title: Text(context.t('Record voice note')),
       content: SizedBox(
         width: 360,
         child: Column(
@@ -3504,8 +3528,8 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
             const SizedBox(height: 8),
             Text(
               _isRecording
-                  ? 'Recording. Press Insert when finished.'
-                  : 'Press Record and allow microphone access.',
+                  ? context.t('Recording. Press Insert when finished.')
+                  : context.t('Press Record and allow microphone access.'),
               textAlign: TextAlign.center,
             ),
           ],
@@ -3514,19 +3538,19 @@ class _VoiceRecorderDialogState extends State<_VoiceRecorderDialog> {
       actions: [
         TextButton(
           onPressed: _isSaving ? null : _cancel,
-          child: const Text('Cancel'),
+          child: Text(context.t('Cancel')),
         ),
         if (!_isRecording)
           FilledButton.icon(
             onPressed: _isSaving ? null : _start,
             icon: const Icon(Icons.fiber_manual_record_rounded),
-            label: const Text('Record'),
+            label: Text(context.t('Record')),
           )
         else
           FilledButton.icon(
             onPressed: _isSaving ? null : _stopAndInsert,
             icon: const Icon(Icons.check_rounded),
-            label: Text(_isSaving ? 'Saving' : 'Insert'),
+            label: Text(_isSaving ? context.t('Saving') : context.t('Insert')),
           ),
       ],
     );
@@ -3649,7 +3673,9 @@ class _AudioEmbedCardState extends State<_AudioEmbedCard> {
         child: Row(
           children: [
             _GlassIconButton(
-              tooltip: _state == PlayerState.playing ? 'Stop' : 'Play',
+              tooltip: _state == PlayerState.playing
+                  ? context.t('Stop')
+                  : context.t('Play'),
               icon: _state == PlayerState.playing
                   ? Icons.stop_rounded
                   : Icons.play_arrow_rounded,
@@ -3666,14 +3692,14 @@ class _AudioEmbedCardState extends State<_AudioEmbedCard> {
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   Text(
-                    'Voice recording',
+                    context.t('Voice recording'),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
             ),
             IconButton(
-              tooltip: 'Open audio file',
+              tooltip: context.t('Open audio file'),
               onPressed: widget.data.source.startsWith('data:')
                   ? null
                   : _openExternal,
@@ -3720,7 +3746,10 @@ class _DocumentOutlinePanel extends StatelessWidget {
         padding: const EdgeInsets.all(10),
         child: ListView(
           children: [
-            Text('Accordion', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              context.t('Accordion'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 6),
             for (final section in sections)
               Card(
@@ -3736,23 +3765,25 @@ class _DocumentOutlinePanel extends StatelessWidget {
                   ),
                   subtitle: Text(
                     section.level == 0
-                        ? 'Text block'
+                        ? context.t('Text block')
                         : section.level == 1
-                        ? 'Heading'
-                        : 'Sub heading',
+                        ? context.t('Heading')
+                        : context.t('Sub heading'),
                   ),
                   trailing: IconButton(
-                    tooltip: 'Jump to section',
+                    tooltip: context.t('Jump to section'),
                     onPressed: () => onJump(section.offset),
                     icon: const Icon(Icons.arrow_forward_rounded),
                   ),
                   children: [
                     if (section.bodyLines.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('No text under this heading yet.'),
+                          child: Text(
+                            context.t('No text under this heading yet.'),
+                          ),
                         ),
                       ),
                     if (section.bodyLines.isNotEmpty)
@@ -3913,12 +3944,12 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
                   Row(
                     children: [
                       Text(
-                        'Mini sheet',
+                        context.t('Mini sheet'),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const Spacer(),
                       IconButton(
-                        tooltip: 'Add row',
+                        tooltip: context.t('Add row'),
                         onPressed: () {
                           setState(() => rows.add(['', '', '']));
                           _persist();
@@ -3957,7 +3988,7 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
                                 ),
                               ),
                             IconButton(
-                              tooltip: 'Delete row',
+                              tooltip: context.t('Delete row'),
                               onPressed: rows.length == 1
                                   ? null
                                   : () {
@@ -3986,7 +4017,7 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
                   Row(
                     children: [
                       Text(
-                        'Graph',
+                        context.t('Graph'),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const Spacer(),
@@ -4083,23 +4114,29 @@ class _SlidesWorkspace extends StatelessWidget {
             FilledButton.icon(
               onPressed: isGenerating ? null : onGenerate,
               icon: const Icon(Icons.auto_awesome_rounded),
-              label: Text(isGenerating ? 'Generating' : 'Generate with Gemini'),
+              label: Text(
+                isGenerating
+                    ? context.t('Generating')
+                    : context.t('Generate with Gemini'),
+              ),
             ),
             const SizedBox(width: 8),
             OutlinedButton.icon(
               onPressed: onExport,
               icon: const Icon(Icons.ios_share_rounded),
-              label: const Text('Export PPTX'),
+              label: Text(context.t('Export PPTX')),
             ),
             const Spacer(),
-            Text('${slides.length} slides'),
+            Text(context.slidesCount(slides.length)),
           ],
         ),
         const SizedBox(height: 12),
         Expanded(
           child: slides.isEmpty
-              ? const Center(
-                  child: Text('Generate slides from your note content.'),
+              ? Center(
+                  child: Text(
+                    context.t('Generate slides from your note content.'),
+                  ),
                 )
               : ListView.separated(
                   itemCount: slides.length,
@@ -4113,8 +4150,8 @@ class _SlidesWorkspace extends StatelessWidget {
                           children: [
                             TextFormField(
                               initialValue: slide.title,
-                              decoration: const InputDecoration(
-                                labelText: 'Slide title',
+                              decoration: InputDecoration(
+                                labelText: context.t('Slide title'),
                               ),
                               onChanged: (value) {
                                 slides[index] = GeneratedSlide(
@@ -4130,8 +4167,8 @@ class _SlidesWorkspace extends StatelessWidget {
                               initialValue: slide.bullets.join('\n'),
                               minLines: 3,
                               maxLines: 6,
-                              decoration: const InputDecoration(
-                                labelText: 'Bullets, one per line',
+                              decoration: InputDecoration(
+                                labelText: context.t('Bullets, one per line'),
                               ),
                               onChanged: (value) {
                                 slides[index] = GeneratedSlide(
@@ -4202,7 +4239,7 @@ class _FlashcardWorkspace extends StatelessWidget {
                 const Icon(Icons.style_rounded),
                 const SizedBox(width: 8),
                 Text(
-                  'Flashcards',
+                  context.t('Flashcards'),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const Spacer(),
@@ -4222,8 +4259,10 @@ class _FlashcardWorkspace extends StatelessWidget {
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text(
-                  'Flashcards are locked. Enter API key to enable this tab.',
+                child: Text(
+                  context.t(
+                    'Flashcards are locked. Enter API key to enable this tab.',
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -4231,9 +4270,9 @@ class _FlashcardWorkspace extends StatelessWidget {
                 initialValue: apiKey,
                 obscureText: true,
                 onChanged: onApiKeyChanged,
-                decoration: const InputDecoration(
-                  labelText: 'API key',
-                  prefixIcon: Icon(Icons.key_rounded),
+                decoration: InputDecoration(
+                  labelText: context.t('API key'),
+                  prefixIcon: const Icon(Icons.key_rounded),
                 ),
               ),
               const Spacer(),
@@ -4242,9 +4281,9 @@ class _FlashcardWorkspace extends StatelessWidget {
                 initialValue: apiKey,
                 obscureText: true,
                 onChanged: onApiKeyChanged,
-                decoration: const InputDecoration(
-                  labelText: 'API key',
-                  prefixIcon: Icon(Icons.key_rounded),
+                decoration: InputDecoration(
+                  labelText: context.t('API key'),
+                  prefixIcon: const Icon(Icons.key_rounded),
                 ),
               ),
               const SizedBox(height: 10),
@@ -4255,26 +4294,32 @@ class _FlashcardWorkspace extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: isGenerating ? null : onGenerate,
                     icon: const Icon(Icons.auto_awesome_rounded),
-                    label: Text(isGenerating ? 'Generating' : 'Generate cards'),
+                    label: Text(
+                      isGenerating
+                          ? context.t('Generating')
+                          : context.t('Generate cards'),
+                    ),
                   ),
                   OutlinedButton.icon(
                     onPressed: cards.isEmpty ? null : onPrevious,
                     icon: const Icon(Icons.arrow_back_rounded),
-                    label: const Text('Previous'),
+                    label: Text(context.t('Previous')),
                   ),
                   OutlinedButton.icon(
                     onPressed: cards.isEmpty ? null : onNext,
                     icon: const Icon(Icons.arrow_forward_rounded),
-                    label: const Text('Next'),
+                    label: Text(context.t('Next')),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               Expanded(
                 child: cards.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text(
-                          'Generate flashcards from your note content.',
+                          context.t(
+                            'Generate flashcards from your note content.',
+                          ),
                         ),
                       )
                     : Column(
@@ -4301,7 +4346,9 @@ class _FlashcardWorkspace extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      showAnswer ? 'Answer' : 'Question',
+                                      showAnswer
+                                          ? context.t('Answer')
+                                          : context.t('Question'),
                                       style: Theme.of(
                                         context,
                                       ).textTheme.labelLarge,
@@ -4317,7 +4364,7 @@ class _FlashcardWorkspace extends StatelessWidget {
                                     ),
                                     const Spacer(),
                                     Text(
-                                      'Tap card to flip',
+                                      context.t('Tap card to flip'),
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodySmall,
@@ -4330,8 +4377,8 @@ class _FlashcardWorkspace extends StatelessWidget {
                           const SizedBox(height: 10),
                           TextFormField(
                             initialValue: cards[safeIndex].question,
-                            decoration: const InputDecoration(
-                              labelText: 'Question',
+                            decoration: InputDecoration(
+                              labelText: context.t('Question'),
                             ),
                             onChanged: (value) {
                               final next = [...cards];
@@ -4352,8 +4399,8 @@ class _FlashcardWorkspace extends StatelessWidget {
                           const SizedBox(height: 8),
                           TextFormField(
                             initialValue: cards[safeIndex].answer,
-                            decoration: const InputDecoration(
-                              labelText: 'Answer',
+                            decoration: InputDecoration(
+                              labelText: context.t('Answer'),
                             ),
                             onChanged: (value) {
                               final next = [...cards];
@@ -4404,23 +4451,28 @@ class ProgressPanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Tools',
+                    context.t('Tools'),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Close right panel',
+                  tooltip: context.t('Close right panel'),
                   onPressed: () => controller.setRightPaneVisible(false),
                   icon: const Icon(Icons.close_rounded),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            Text('Study sets', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              context.t('Study sets'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             if (controller.studySets.isEmpty)
               Text(
-                'Select multiple files and press the progress button to link them.',
+                context.t(
+                  'Select multiple files and press the progress button to link them.',
+                ),
                 style: Theme.of(context).textTheme.bodySmall,
               )
             else
@@ -4500,7 +4552,7 @@ class StudySetDetails extends StatelessWidget {
                       Row(
                         children: [
                           IconButton.filledTonal(
-                            tooltip: 'Open file',
+                            tooltip: context.t('Open file'),
                             iconSize: 18,
                             onPressed: () => controller.selectFile(file.id),
                             icon: const Icon(Icons.arrow_forward_rounded),
@@ -4563,7 +4615,7 @@ class FolderProgressControl extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  'Folder progress',
+                  context.t('Folder progress'),
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const Spacer(),
@@ -4730,17 +4782,22 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
               children: [
                 Text(
                   widget.mode == EditorSurface.table
-                      ? 'Table data'
-                      : 'Graph from file data',
+                      ? context.t('Table data')
+                      : context.t('Graph from file data'),
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const Spacer(),
                 if (widget.mode == EditorSurface.table)
                   IconButton(
-                    tooltip: 'Add row',
+                    tooltip: context.t('Add row'),
                     onPressed: () {
                       setState(() {
-                        data.add(_DataPoint('Item ${data.length + 1}', 0));
+                        data.add(
+                          _DataPoint(
+                            '${context.t('Item')} ${data.length + 1}',
+                            0,
+                          ),
+                        );
                         _persist();
                       });
                     },
@@ -4788,13 +4845,13 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
                             Expanded(
                               child: TextFormField(
                                 initialValue: point.label,
-                                decoration: const InputDecoration(
-                                  hintText: 'Label',
+                                decoration: InputDecoration(
+                                  hintText: context.t('Label'),
                                 ),
                                 onChanged: (value) {
                                   data[index] = _DataPoint(
                                     value.trim().isEmpty
-                                        ? 'Item'
+                                        ? context.t('Item')
                                         : value.trim(),
                                     point.value,
                                   );
@@ -4808,8 +4865,8 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
                               child: TextFormField(
                                 initialValue: point.value.toStringAsFixed(0),
                                 keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  hintText: 'Value',
+                                decoration: InputDecoration(
+                                  hintText: context.t('Value'),
                                 ),
                                 onChanged: (value) {
                                   final parsed = double.tryParse(value) ?? 0;
@@ -4823,7 +4880,7 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
                               ),
                             ),
                             IconButton(
-                              tooltip: 'Delete row',
+                              tooltip: context.t('Delete row'),
                               onPressed: data.length == 1
                                   ? null
                                   : () {
@@ -4844,13 +4901,16 @@ class _FileDataWorkspaceState extends State<_FileDataWorkspace> {
                         children: [
                           Row(
                             children: [
-                              _MetricChip(label: 'Total', value: total),
+                              _MetricChip(
+                                label: context.t('Total'),
+                                value: total,
+                              ),
                               const SizedBox(width: 8),
-                              _MetricChip(label: 'Avg', value: avg),
+                              _MetricChip(label: context.t('Avg'), value: avg),
                               const SizedBox(width: 8),
-                              _MetricChip(label: 'Max', value: max),
+                              _MetricChip(label: context.t('Max'), value: max),
                               const SizedBox(width: 8),
-                              _MetricChip(label: 'Min', value: min),
+                              _MetricChip(label: context.t('Min'), value: min),
                             ],
                           ),
                           const SizedBox(height: 10),
@@ -5386,14 +5446,14 @@ Future<void> _showViewOptions(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'View Options',
+                  context.t('View Options'),
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 24),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Layout'),
+                    Text(context.t('Layout')),
                     SegmentedButton<bool>(
                       segments: const [
                         ButtonSegment(
@@ -5415,23 +5475,23 @@ Future<void> _showViewOptions(
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Sort by'),
+                    Text(context.t('Sort by')),
                     DropdownButton<FolderSortMode>(
                       value: controller.sortMode,
                       onChanged: (mode) =>
                           mode != null ? controller.setSortMode(mode) : null,
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: FolderSortMode.custom,
-                          child: Text('Custom'),
+                          child: Text(context.t('Custom')),
                         ),
                         DropdownMenuItem(
                           value: FolderSortMode.name,
-                          child: Text('Name'),
+                          child: Text(context.t('Name')),
                         ),
                         DropdownMenuItem(
                           value: FolderSortMode.progress,
-                          child: Text('Progress'),
+                          child: Text(context.t('Progress')),
                         ),
                       ],
                     ),
@@ -5470,7 +5530,7 @@ Future<void> _showCommandPalette(
     builder: (dialogContext) {
       return StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: const Text('Command Palette'),
+          title: Text(context.t('Command Palette')),
           content: SizedBox(
             width: 620,
             child: Column(
@@ -5479,9 +5539,9 @@ Future<void> _showCommandPalette(
                 TextField(
                   controller: queryController,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Search notes or run a command',
-                    prefixIcon: Icon(Icons.search_rounded),
+                  decoration: InputDecoration(
+                    hintText: context.t('Search notes or run a command'),
+                    prefixIcon: const Icon(Icons.search_rounded),
                   ),
                   onChanged: (value) => setState(() => query = value.trim()),
                 ),
@@ -5493,29 +5553,29 @@ Future<void> _showCommandPalette(
                           children: [
                             ListTile(
                               leading: const Icon(Icons.note_add_outlined),
-                              title: const Text('Create new file'),
-                              subtitle: const Text('Shortcut: Ctrl+N'),
+                              title: Text(context.t('Create new file')),
+                              subtitle: Text(context.t('Shortcut: Ctrl+N')),
                               onTap: () => Navigator.of(
                                 dialogContext,
                               ).pop(const _CommandPaletteSelection('new-file')),
                             ),
                             ListTile(
                               leading: const Icon(Icons.upload_file_rounded),
-                              title: const Text('Export backup'),
+                              title: Text(context.t('Export backup')),
                               onTap: () => Navigator.of(dialogContext).pop(
                                 const _CommandPaletteSelection('export-backup'),
                               ),
                             ),
                             ListTile(
                               leading: const Icon(Icons.download_rounded),
-                              title: const Text('Import backup'),
+                              title: Text(context.t('Import backup')),
                               onTap: () => Navigator.of(dialogContext).pop(
                                 const _CommandPaletteSelection('import-backup'),
                               ),
                             ),
                             ListTile(
                               leading: const Icon(Icons.delete_outline_rounded),
-                              title: const Text('Open trash'),
+                              title: Text(context.t('Open trash')),
                               onTap: () => Navigator.of(dialogContext).pop(
                                 const _CommandPaletteSelection('open-trash'),
                               ),
@@ -5533,10 +5593,10 @@ Future<void> _showCommandPalette(
                               );
                             }
                             if (data.isEmpty) {
-                              return const Center(
+                              return Center(
                                 child: Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Text('No matching notes'),
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(context.t('No matching notes')),
                                 ),
                               );
                             }
@@ -5554,7 +5614,7 @@ Future<void> _showCommandPalette(
                                   title: Text(file.title),
                                   subtitle: Text(
                                     file.description.isEmpty
-                                        ? 'No description'
+                                        ? context.t('No description')
                                         : file.description,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -5640,13 +5700,13 @@ Future<void> _showTrashSheet(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Trash',
+                      context.t('Trash'),
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 10),
                     if (folders.isEmpty && files.isEmpty)
-                      const Expanded(
-                        child: Center(child: Text('Trash is empty')),
+                      Expanded(
+                        child: Center(child: Text(context.t('Trash is empty'))),
                       )
                     else
                       Expanded(
@@ -5658,12 +5718,12 @@ Future<void> _showTrashSheet(
                                   Icons.folder_delete_outlined,
                                 ),
                                 title: Text(folder.name),
-                                subtitle: const Text('Folder'),
+                                subtitle: Text(context.t('Folder')),
                                 trailing: Wrap(
                                   spacing: 8,
                                   children: [
                                     IconButton(
-                                      tooltip: 'Restore',
+                                      tooltip: context.t('Restore'),
                                       onPressed: () async {
                                         await controller.restoreFolderFromTrash(
                                           folder.id,
@@ -5679,7 +5739,7 @@ Future<void> _showTrashSheet(
                                       icon: const Icon(Icons.restore_rounded),
                                     ),
                                     IconButton(
-                                      tooltip: 'Delete forever',
+                                      tooltip: context.t('Delete forever'),
                                       onPressed: () async {
                                         await controller
                                             .permanentlyDeleteFolder(folder.id);
@@ -5700,12 +5760,12 @@ Future<void> _showTrashSheet(
                               ListTile(
                                 leading: const Icon(Icons.description_outlined),
                                 title: Text(file.title),
-                                subtitle: const Text('File'),
+                                subtitle: Text(context.t('File')),
                                 trailing: Wrap(
                                   spacing: 8,
                                   children: [
                                     IconButton(
-                                      tooltip: 'Restore',
+                                      tooltip: context.t('Restore'),
                                       onPressed: () async {
                                         await controller.restoreFileFromTrash(
                                           file.id,
@@ -5721,7 +5781,7 @@ Future<void> _showTrashSheet(
                                       icon: const Icon(Icons.restore_rounded),
                                     ),
                                     IconButton(
-                                      tooltip: 'Delete forever',
+                                      tooltip: context.t('Delete forever'),
                                       onPressed: () async {
                                         await controller.permanentlyDeleteFile(
                                           file.id,
@@ -5771,13 +5831,19 @@ Future<void> _exportAppBackup(
       return;
     }
     if (path != null) {
-      _showSheetMessage(context, 'Backup exported: $path');
+      _showSheetMessage(
+        context,
+        context.t('Backup exported: {path}', {'path': path}),
+      );
     }
   } catch (error) {
     if (!context.mounted) {
       return;
     }
-    _showSheetMessage(context, 'Backup export failed: $error');
+    _showSheetMessage(
+      context,
+      context.t('Backup export failed: {error}', {'error': error}),
+    );
   }
 }
 
@@ -5806,7 +5872,10 @@ Future<void> _importAppBackup(
     );
   } catch (error) {
     if (context.mounted) {
-      _showSheetMessage(context, 'Invalid backup file: $error');
+      _showSheetMessage(
+        context,
+        context.t('Invalid backup file: {error}', {'error': error}),
+      );
     }
     return;
   }
@@ -5825,12 +5894,18 @@ Future<void> _importAppBackup(
     if (!context.mounted) {
       return;
     }
-    _showSheetMessage(context, 'Backup imported: ${file.name}');
+    _showSheetMessage(
+      context,
+      context.t('Backup imported: {name}', {'name': file.name}),
+    );
   } catch (error) {
     if (!context.mounted) {
       return;
     }
-    _showSheetMessage(context, 'Backup import failed: $error');
+    _showSheetMessage(
+      context,
+      context.t('Backup import failed: {error}', {'error': error}),
+    );
   }
 }
 
@@ -5841,27 +5916,26 @@ Future<BackupImportMode?> _showBackupImportModeDialog(
   return showDialog<BackupImportMode>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Import backup'),
+      title: Text(context.t('Import backup')),
       content: Text(
-        'This backup contains:\n'
-        '- ${backup.folders.length} folders\n'
-        '- ${backup.files.length} files\n'
-        '- ${backup.studySets.length} study sets\n\n'
-        'Replace all: wipe current data and restore from backup.\n'
-        'Merge as new: keep current data and append imported folders.',
+        context.backupContents(
+          folders: backup.folders.length,
+          files: backup.files.length,
+          studySets: backup.studySets.length,
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.t('Cancel')),
         ),
         OutlinedButton(
           onPressed: () => Navigator.of(context).pop(BackupImportMode.merge),
-          child: const Text('Merge as new'),
+          child: Text(context.t('Merge as new')),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(BackupImportMode.replace),
-          child: const Text('Replace all'),
+          child: Text(context.t('Replace all')),
         ),
       ],
     ),
@@ -5888,7 +5962,7 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                     children: [
                       const Icon(Icons.bolt_rounded),
                       const SizedBox(width: 10),
-                      const Expanded(child: Text('Fast mode')),
+                      Expanded(child: Text(context.t('Fast mode'))),
                       Switch(
                         value: controller.fastMode,
                         onChanged: controller.setFastMode,
@@ -5900,7 +5974,7 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                     children: [
                       const Icon(Icons.dark_mode_outlined),
                       const SizedBox(width: 10),
-                      const Expanded(child: Text('Theme')),
+                      Expanded(child: Text(context.t('Theme'))),
                       SegmentedButton<AppThemeMode>(
                         segments: const [
                           ButtonSegment(
@@ -5923,7 +5997,7 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                     children: [
                       const Icon(Icons.font_download_outlined),
                       const SizedBox(width: 10),
-                      const Expanded(child: Text('App font')),
+                      Expanded(child: Text(context.t('App font'))),
                       DropdownButton<AppFontPreset>(
                         value: controller.fontPreset,
                         onChanged: (value) {
@@ -5942,10 +6016,33 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.translate_rounded),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(context.t('Language'))),
+                      SegmentedButton<AppLanguage>(
+                        segments: [
+                          ButtonSegment(
+                            value: AppLanguage.en,
+                            label: Text(context.t('English')),
+                          ),
+                          ButtonSegment(
+                            value: AppLanguage.th,
+                            label: Text(context.t('Thai')),
+                          ),
+                        ],
+                        selected: {controller.language},
+                        onSelectionChanged: (value) =>
+                            controller.setLanguage(value.first),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   ExpansionTile(
                     leading: const Icon(Icons.palette_outlined),
-                    title: const Text('Accent color'),
+                    title: Text(context.t('Accent color')),
                     subtitle: Text(
                       '#${(controller.accentColorValue & 0x00FFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
                     ),
@@ -5962,7 +6059,7 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                   ),
                   ExpansionTile(
                     leading: const Icon(Icons.note_alt_outlined),
-                    title: const Text('Editor paper color'),
+                    title: Text(context.t('Editor paper color')),
                     subtitle: Text(
                       '#${(controller.editorPaperColorValue & 0x00FFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
                     ),
@@ -5979,11 +6076,11 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                   ),
                   ExpansionTile(
                     leading: const Icon(Icons.key_rounded),
-                    title: const Text('API key'),
+                    title: Text(context.t('API key')),
                     subtitle: Text(
                       controller.hasApiKey
-                          ? 'Saved in this session'
-                          : 'Not set',
+                          ? context.t('Saved in this session')
+                          : context.t('Not set'),
                     ),
                     children: [
                       Padding(
@@ -5992,9 +6089,9 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                           initialValue: controller.apiKey,
                           obscureText: true,
                           onChanged: controller.setApiKey,
-                          decoration: const InputDecoration(
-                            labelText: 'Enter API key',
-                            prefixIcon: Icon(Icons.vpn_key_outlined),
+                          decoration: InputDecoration(
+                            labelText: context.t('Enter API key'),
+                            prefixIcon: const Icon(Icons.vpn_key_outlined),
                           ),
                         ),
                       ),
@@ -6002,11 +6099,16 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                   ),
                   ExpansionTile(
                     leading: const Icon(Icons.backup_rounded),
-                    title: const Text('Backup & restore'),
+                    title: Text(context.t('Backup & restore')),
                     subtitle: Text(
                       controller.lastBackupAt == null
-                          ? 'Export or import a .leccy/.txt backup'
-                          : 'Last backup: ${intl.DateFormat('yyyy-MM-dd HH:mm').format(controller.lastBackupAt!)}',
+                          ? context.t('Export or import a .leccy/.txt backup')
+                          : context.lastBackup(
+                              controller.lastBackupAt!,
+                              intl.DateFormat(
+                                'yyyy-MM-dd HH:mm',
+                              ).format(controller.lastBackupAt!),
+                            ),
                     ),
                     children: [
                       Padding(
@@ -6018,7 +6120,7 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                                 onPressed: () =>
                                     _exportAppBackup(context, controller),
                                 icon: const Icon(Icons.upload_file_rounded),
-                                label: const Text('Export backup'),
+                                label: Text(context.t('Export backup')),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -6027,7 +6129,7 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                                 onPressed: () =>
                                     _importAppBackup(context, controller),
                                 icon: const Icon(Icons.download_rounded),
-                                label: const Text('Import backup'),
+                                label: Text(context.t('Import backup')),
                               ),
                             ),
                           ],
@@ -6049,8 +6151,10 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                       children: [
                         const Icon(Icons.link_rounded),
                         const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text('Want more customization? Go here'),
+                        Expanded(
+                          child: Text(
+                            context.t('Want more customization? Go here'),
+                          ),
                         ),
                         TextButton(
                           onPressed: () async {
@@ -6062,7 +6166,7 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                               mode: LaunchMode.externalApplication,
                             );
                           },
-                          child: const Text('Open'),
+                          child: Text(context.t('Open')),
                         ),
                       ],
                     ),
@@ -6125,21 +6229,21 @@ class _AnyColorPickerState extends State<_AnyColorPicker> {
           value: hsv.hue,
           min: 0,
           max: 360,
-          label: 'Hue',
+          label: context.t('Hue'),
           onChanged: (value) => _update(hsv.withHue(value)),
         ),
         Slider(
           value: hsv.saturation,
           min: 0,
           max: 1,
-          label: 'Saturation',
+          label: context.t('Saturation'),
           onChanged: (value) => _update(hsv.withSaturation(value)),
         ),
         Slider(
           value: hsv.value,
           min: 0,
           max: 1,
-          label: 'Brightness',
+          label: context.t('Brightness'),
           onChanged: (value) => _update(hsv.withValue(value)),
         ),
       ],
@@ -6155,7 +6259,7 @@ class _ProgressChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Progress $percent%',
+      message: context.progressPercent(percent),
       child: _LiquidGlass(
         borderRadius: 18,
         blur: 10,
@@ -6182,10 +6286,10 @@ class _SaveState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = isSaving
-        ? 'Saving'
+        ? context.t('Saving')
         : hasPendingChanges
-        ? 'Unsaved'
-        : 'Saved';
+        ? context.t('Unsaved')
+        : context.t('Saved');
     final icon = isSaving
         ? Icons.sync_rounded
         : hasPendingChanges
@@ -6302,7 +6406,11 @@ class _FolderDialogState extends State<FolderDialog> {
   Widget build(BuildContext context) {
     final color = Color(_colorValue);
     return AlertDialog(
-      title: Text(widget.folder == null ? 'New folder' : 'Customize folder'),
+      title: Text(
+        widget.folder == null
+            ? context.t('New folder')
+            : context.t('Customize folder'),
+      ),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -6311,14 +6419,14 @@ class _FolderDialogState extends State<FolderDialog> {
           children: [
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Folder name'),
+              decoration: InputDecoration(labelText: context.t('Folder name')),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _badgeController,
               maxLength: 3,
-              decoration: const InputDecoration(
-                labelText: 'Emoji or letters',
+              decoration: InputDecoration(
+                labelText: context.t('Emoji or letters'),
                 counterText: '',
               ),
             ),
@@ -6362,11 +6470,15 @@ class _FolderDialogState extends State<FolderDialog> {
                 FilledButton.tonalIcon(
                   onPressed: _isSavingImage ? null : _pickCover,
                   icon: const Icon(Icons.image_outlined),
-                  label: Text(_isSavingImage ? 'Saving' : 'Cover image'),
+                  label: Text(
+                    _isSavingImage
+                        ? context.t('Saving')
+                        : context.t('Cover image'),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  tooltip: 'Remove cover image',
+                  tooltip: context.t('Remove cover image'),
                   onPressed: _coverPath == null
                       ? null
                       : () => setState(() => _coverPath = null),
@@ -6387,13 +6499,13 @@ class _FolderDialogState extends State<FolderDialog> {
               }
             },
             icon: const Icon(Icons.delete_outline_rounded),
-            label: const Text('Move To Trash'),
+            label: Text(context.t('Move To Trash')),
           ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.t('Cancel')),
         ),
-        FilledButton(onPressed: _save, child: const Text('Save')),
+        FilledButton(onPressed: _save, child: Text(context.t('Save'))),
       ],
     );
   }

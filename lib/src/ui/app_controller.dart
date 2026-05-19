@@ -24,6 +24,8 @@ enum AppThemeMode { light, dark }
 
 enum AppFontPreset { workSans, nunito, sourceSerif, lato }
 
+enum AppLanguage { en, th }
+
 class AppController extends ChangeNotifier {
   AppController({LeccyStore? repository, SummaryService? summaryService})
     : _repository = repository,
@@ -39,6 +41,7 @@ class AppController extends ChangeNotifier {
   FolderSortMode sortMode = FolderSortMode.custom;
   AppThemeMode themeMode = AppThemeMode.light;
   AppFontPreset fontPreset = AppFontPreset.workSans;
+  AppLanguage language = AppLanguage.en;
   bool fastMode = true;
   int accentColorValue = const Color(0xFFE8DCC8).toARGB32();
   int editorPaperColorValue = const Color(0xFFFFFBF4).toARGB32();
@@ -54,6 +57,7 @@ class AppController extends ChangeNotifier {
   DateTime? lastBackupAt;
 
   static const _themeModeKey = 'theme_mode';
+  static const _languageKey = 'language';
   static const _fastModeKey = 'fast_mode';
   static const _fontPresetKey = 'font_preset';
   static const _accentColorKey = 'accent_color';
@@ -209,6 +213,12 @@ class AppController extends ChangeNotifier {
   void setThemeMode(AppThemeMode value) {
     themeMode = value;
     unawaited(repository.setSetting(_themeModeKey, value.name));
+    notifyListeners();
+  }
+
+  void setLanguage(AppLanguage value) {
+    language = value;
+    unawaited(repository.setSetting(_languageKey, value.name));
     notifyListeners();
   }
 
@@ -721,6 +731,15 @@ class AppController extends ChangeNotifier {
     final loadedTheme = await repository.getSetting(_themeModeKey);
     if (loadedTheme == AppThemeMode.dark.name) {
       themeMode = AppThemeMode.dark;
+    }
+    final loadedLanguage = await repository.getSetting(_languageKey);
+    if (loadedLanguage != null) {
+      for (final value in AppLanguage.values) {
+        if (value.name == loadedLanguage) {
+          language = value;
+          break;
+        }
+      }
     }
     final loadedFastMode = await repository.getSetting(_fastModeKey);
     if (loadedFastMode != null) {
