@@ -46,6 +46,9 @@ class AppController extends ChangeNotifier {
   int accentColorValue = const Color(0xFFE8DCC8).toARGB32();
   int editorPaperColorValue = const Color(0xFFFFFBF4).toARGB32();
   String apiKey = '';
+  String _aiProvider = 'gemini';
+  String _aiBaseUrl = '';
+  String _aiModel = '';
   bool showLeftPane = true;
   bool showRightPane = true;
   bool editorFullscreen = false;
@@ -56,6 +59,7 @@ class AppController extends ChangeNotifier {
   int _folderLoadGeneration = 0;
   DateTime? lastBackupAt;
 
+  bool showAdvancedTools = false;
   static const _themeModeKey = 'theme_mode';
   static const _languageKey = 'language';
   static const _fastModeKey = 'fast_mode';
@@ -65,7 +69,14 @@ class AppController extends ChangeNotifier {
   static const _leftPaneKey = 'left_pane_visible';
   static const _rightPaneKey = 'right_pane_visible';
   static const _apiKeyKey = 'api_key';
+  static const _aiProviderKey = 'ai_provider';
+  static const _aiBaseUrlKey = 'ai_base_url';
+  static const _aiModelKey = 'ai_model';
+  static const _legacyAiPresetKey = 'ai_preset';
+  static const _legacyAiCustomBaseUrlKey = 'ai_custom_base_url';
+  static const _legacyAiCustomModelKey = 'ai_custom_model';
   static const _lastBackupKey = 'last_backup_at';
+  static const _showAdvancedToolsKey = 'show_advanced_tools';
 
   List<LectureFolder> folders = [];
   List<LectureFile> files = [];
@@ -246,11 +257,152 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setShowAdvancedTools(bool value) {
+    showAdvancedTools = value;
+    unawaited(repository.setSetting(_showAdvancedToolsKey, value.toString()));
+    notifyListeners();
+  }
+
+  void deselectFile() {
+    selectedFileId = null;
+    notifyListeners();
+  }
+
   bool get hasApiKey => apiKey.trim().isNotEmpty;
+  String get aiProvider => _aiProvider;
+  String get aiBaseUrl => _aiBaseUrl;
+  String get aiModel => _aiModel;
+
+  // Backward-compatible aliases for existing call sites.
+  String get aiPreset => _aiProvider;
+  String get aiCustomBaseUrl => _aiBaseUrl;
+  String get aiCustomModel => _aiModel;
 
   void setApiKey(String value) {
     apiKey = value.trim();
     unawaited(repository.setSetting(_apiKeyKey, apiKey));
+    notifyListeners();
+  }
+
+  void setAiProvider(String value) {
+    _aiProvider = _normalizeAiProvider(value);
+    unawaited(repository.setSetting(_aiProviderKey, _aiProvider));
+    notifyListeners();
+  }
+
+  void setAiBaseUrl(String value) {
+    _aiBaseUrl = value.trim();
+    unawaited(repository.setSetting(_aiBaseUrlKey, _aiBaseUrl));
+    notifyListeners();
+  }
+
+  void setAiModel(String value) {
+    _aiModel = value.trim();
+    unawaited(repository.setSetting(_aiModelKey, _aiModel));
+    notifyListeners();
+  }
+
+  void setAiPreset(String value) {
+    setAiProvider(value);
+  }
+
+  void setAiCustomBaseUrl(String value) {
+    setAiBaseUrl(value);
+  }
+
+  void setAiCustomModel(String value) {
+    setAiModel(value);
+  }
+
+  String _normalizeAiProvider(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'gemini':
+      case 'openai':
+      case 'anthropic':
+      case 'deepseek':
+        return value.trim().toLowerCase();
+      case 'ollama':
+      case 'custom':
+      case 'ollama_custom':
+        return 'ollama_custom';
+      default:
+        return 'gemini';
+    }
+  }
+
+  bool get selectedAiProviderRequiresApiKey =>
+      _aiProvider == 'gemini' ||
+      _aiProvider == 'openai' ||
+      _aiProvider == 'anthropic' ||
+      _aiProvider == 'deepseek';
+
+  bool get selectedAiProviderNeedsApiKey =>
+      selectedAiProviderRequiresApiKey && apiKey.trim().isEmpty;
+
+  String aiProviderDisplayName([String? value]) {
+    switch ((value ?? _aiProvider).trim().toLowerCase()) {
+      case 'gemini':
+        return 'Google Gemini';
+      case 'openai':
+        return 'OpenAI';
+      case 'anthropic':
+        return 'Anthropic Claude';
+      case 'deepseek':
+        return 'DeepSeek';
+      case 'ollama_custom':
+        return 'Ollama / Custom';
+      default:
+        return 'Unknown';
+    }
+  }
+
+  String defaultModelForProvider([String? value]) {
+    switch ((value ?? _aiProvider).trim().toLowerCase()) {
+      case 'openai':
+        return 'gpt-4o-mini';
+      case 'anthropic':
+        return 'claude-3-5-sonnet-20241022';
+      case 'deepseek':
+        return 'deepseek-chat';
+      case 'ollama_custom':
+        return 'llama3.1';
+      case 'gemini':
+      default:
+        return 'gemini-2.5-flash';
+    }
+  }
+
+  String defaultBaseUrlForProvider([String? value]) {
+    switch ((value ?? _aiProvider).trim().toLowerCase()) {
+      case 'openai':
+        return 'https://api.openai.com/v1/chat/completions';
+      case 'anthropic':
+        return 'https://api.anthropic.com/v1/messages';
+      case 'deepseek':
+        return 'https://api.deepseek.com/chat/completions';
+      case 'ollama_custom':
+        return 'http://localhost:11434/v1/chat/completions';
+      case 'gemini':
+      default:
+        return 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent';
+    }
+  }
+
+  String resolvedAiModel() {
+    final custom = _aiModel.trim();
+    return custom.isNotEmpty ? custom : defaultModelForProvider();
+  }
+
+  String resolvedAiBaseUrl() {
+    final custom = _aiBaseUrl.trim();
+    return custom.isNotEmpty ? custom : defaultBaseUrlForProvider();
+  }
+
+  void resetAiConfigToProviderDefaults() {
+    _aiBaseUrl = '';
+    _aiModel = '';
+    unawaited(repository.setSetting(_aiBaseUrlKey, _aiBaseUrl));
+    unawaited(repository.setSetting(_aiModelKey, _aiModel));
     notifyListeners();
   }
 
@@ -773,10 +925,27 @@ class AppController extends ChangeNotifier {
       showRightPane = loadedRightPane == 'true';
     }
     apiKey = (await repository.getSetting(_apiKeyKey)) ?? '';
+    _aiProvider = _normalizeAiProvider(
+      (await repository.getSetting(_aiProviderKey)) ??
+          (await repository.getSetting(_legacyAiPresetKey)) ??
+          'gemini',
+    );
+    _aiBaseUrl =
+        (await repository.getSetting(_aiBaseUrlKey)) ??
+        (await repository.getSetting(_legacyAiCustomBaseUrlKey)) ??
+        '';
+    _aiModel =
+        (await repository.getSetting(_aiModelKey)) ??
+        (await repository.getSetting(_legacyAiCustomModelKey)) ??
+        '';
     final loadedBackupAt = await repository.getSetting(_lastBackupKey);
     final millis = int.tryParse(loadedBackupAt ?? '');
     if (millis != null) {
       lastBackupAt = DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+    final loadedAdvanced = await repository.getSetting(_showAdvancedToolsKey);
+    if (loadedAdvanced != null) {
+      showAdvancedTools = loadedAdvanced == 'true';
     }
   }
 

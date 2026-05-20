@@ -397,10 +397,11 @@ class LeccyHomePage extends ConsumerWidget {
                 SafeArea(
                   child: Row(
                     children: [
-                      SizedBox(
-                        width: 320,
-                        child: FolderLibrary(controller: app),
-                      ),
+                      if (app.selectedFileId == null)
+                        SizedBox(
+                          width: 320,
+                          child: FolderLibrary(controller: app),
+                        ),
                       Expanded(child: LectureWorkspace(controller: app)),
                     ],
                   ),
@@ -728,36 +729,37 @@ class LectureWorkspace extends StatelessWidget {
         onAction: () => _showFolderDialog(context, controller),
       );
     }
+    final hasActiveFile = controller.selectedFileId != null;
     return Row(
       children: [
-        if (!controller.showLeftPane && !controller.editorFullscreen)
+        if (!controller.showLeftPane && !controller.editorFullscreen && !hasActiveFile)
           IconButton.filledTonal(
             tooltip: context.t('Open left panel'),
             onPressed: () => controller.setLeftPaneVisible(true),
             icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
           ),
-        if (controller.showLeftPane && !controller.editorFullscreen)
+        if (controller.showLeftPane && !controller.editorFullscreen && !hasActiveFile)
           SizedBox(
             width: controller.leftPaneWidth,
             child: FileListPanel(controller: controller, folder: folder),
           ),
-        if (controller.showLeftPane && !controller.editorFullscreen)
+        if (controller.showLeftPane && !controller.editorFullscreen && !hasActiveFile)
           _PaneHandle(
             onDrag: controller.resizeLeftPane,
             tooltip: context.t('Resize left panel'),
           ),
         Expanded(child: NoteEditor(controller: controller)),
-        if (controller.showRightPane && !controller.editorFullscreen)
+        if (controller.showRightPane && !controller.editorFullscreen && !hasActiveFile)
           _PaneHandle(
             onDrag: (delta) => controller.resizeRightPane(-delta),
             tooltip: context.t('Resize right panel'),
           ),
-        if (controller.showRightPane && !controller.editorFullscreen)
+        if (controller.showRightPane && !controller.editorFullscreen && !hasActiveFile)
           SizedBox(
             width: controller.rightPaneWidth,
             child: ProgressPanel(controller: controller),
           ),
-        if (!controller.showRightPane && !controller.editorFullscreen)
+        if (!controller.showRightPane && !controller.editorFullscreen && !hasActiveFile)
           IconButton.filledTonal(
             tooltip: context.t('Open right panel'),
             onPressed: () => controller.setRightPaneVisible(true),
@@ -2174,6 +2176,9 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         apiKey: widget.controller.apiKey,
         title: file.title,
         noteText: text,
+        provider: widget.controller.aiProvider,
+        baseUrl: widget.controller.aiBaseUrl,
+        model: widget.controller.aiModel,
       );
       await widget.controller.updateSelectedFile(
         slidesJson: _pptxExportService.slidesToJson(slides),
@@ -2226,6 +2231,9 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         apiKey: widget.controller.apiKey,
         title: file.title,
         noteText: text,
+        provider: widget.controller.aiProvider,
+        baseUrl: widget.controller.aiBaseUrl,
+        model: widget.controller.aiModel,
       );
       await widget.controller.updateSelectedFile(
         flashcardsJson: jsonEncode({
@@ -2252,6 +2260,191 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  void _showAiConfigBottomSheet(VoidCallback onConfiguredAndGenerate) {
+    String provider = widget.controller.aiProvider;
+    String baseUrl = widget.controller.aiBaseUrl;
+    String model = widget.controller.aiModel;
+    String apiKey = widget.controller.apiKey;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final requiresKey =
+                provider == 'gemini' ||
+                provider == 'openai' ||
+                provider == 'anthropic' ||
+                provider == 'deepseek';
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface.withOpacity(0.92),
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.white.withOpacity(0.2),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.auto_awesome_rounded,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              context.t('Configure Universal AI'),
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          context.t('Set up any AI provider to generate flashcards and slides instantly.'),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                        const SizedBox(height: 20),
+                        DropdownButtonFormField<String>(
+                          value: provider,
+                          decoration: InputDecoration(
+                            labelText: context.t('AI Provider'),
+                            prefixIcon: const Icon(Icons.hub_outlined),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'gemini', child: Text('Google Gemini')),
+                            DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                            DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek')),
+                            DropdownMenuItem(value: 'anthropic', child: Text('Anthropic Claude')),
+                            DropdownMenuItem(value: 'ollama_custom', child: Text('Ollama / Custom (OpenAI-compatible)')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setModalState(() {
+                                provider = val;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          initialValue: model,
+                          decoration: InputDecoration(
+                            labelText: context.t('Model ID'),
+                            hintText: widget.controller.defaultModelForProvider(provider),
+                            prefixIcon: const Icon(Icons.memory_rounded),
+                          ),
+                          onChanged: (val) => model = val,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          initialValue: baseUrl,
+                          decoration: InputDecoration(
+                            labelText: context.t('Base URL (optional override)'),
+                            hintText: widget.controller.defaultBaseUrlForProvider(provider),
+                            prefixIcon: const Icon(Icons.link_rounded),
+                          ),
+                          onChanged: (val) => baseUrl = val,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          initialValue: apiKey,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: context.t('API Key / Token'),
+                            prefixIcon: const Icon(Icons.key_rounded),
+                            helperText: requiresKey
+                                ? context.t('Required for this provider')
+                                : context.t('Optional for local/custom providers'),
+                          ),
+                          onChanged: (val) => apiKey = val,
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: Text(context.t('Cancel')),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Theme.of(context).colorScheme.primary,
+                                      Theme.of(context).colorScheme.primary.withOpacity(0.85),
+                                    ],
+                                  ),
+                                ),
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.transparent,
+                                    foregroundColor: Colors.white,
+                                    shadowColor: Colors.transparent,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    widget.controller.setAiProvider(provider);
+                                    widget.controller.setAiBaseUrl(baseUrl);
+                                    widget.controller.setAiModel(model);
+                                    widget.controller.setApiKey(apiKey);
+                                    Navigator.pop(context);
+                                    onConfiguredAndGenerate();
+                                  },
+                                  child: Text(context.t('Save & Generate')),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -2334,6 +2527,10 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _showMessage('Write notes first, then restructure.');
       return;
     }
+    if (widget.controller.selectedAiProviderNeedsApiKey) {
+      _showAiConfigBottomSheet(_restructureWithGemini);
+      return;
+    }
     final backup = _RestructureBackup(
       title: _titleController.text,
       description: _descriptionController.text,
@@ -2346,6 +2543,9 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         apiKey: widget.controller.apiKey,
         title: file.title,
         noteText: noteText,
+        provider: widget.controller.aiProvider,
+        baseUrl: widget.controller.aiBaseUrl,
+        model: widget.controller.aiModel,
       );
       final nextDelta = _deltaFromStructuredNote(structured);
       if (nextDelta.isEmpty) {
@@ -2510,14 +2710,41 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
             child: Column(
               children: [
-                TextField(
-                  controller: _titleController,
-                  onChanged: (_) => _scheduleSave(),
-                  style: Theme.of(context).textTheme.titleLarge,
-                  decoration: InputDecoration(
-                    hintText: context.t('Untitled lecture'),
-                    prefixIcon: const Icon(Icons.title_rounded),
-                  ),
+                Row(
+                  children: [
+                    if (widget.controller.selectedFileId != null) ...[
+                      Tooltip(
+                        message: context.t('Back to Library'),
+                        child: _LiquidGlass(
+                          borderRadius: 12,
+                          padding: EdgeInsets.zero,
+                          blur: 8,
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              iconSize: 22,
+                              onPressed: widget.controller.deselectFile,
+                              icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    Expanded(
+                      child: TextField(
+                        controller: _titleController,
+                        onChanged: (_) => _scheduleSave(),
+                        style: Theme.of(context).textTheme.titleLarge,
+                        decoration: InputDecoration(
+                          hintText: context.t('Untitled lecture'),
+                          prefixIcon: const Icon(Icons.title_rounded),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 SingleChildScrollView(
@@ -2675,6 +2902,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           ),
           if (_surface == EditorSurface.note)
             _NoteActionBar(
+              showAdvancedTools: widget.controller.showAdvancedTools,
               controller: quillController,
               searchController: _searchController,
               markerColors: _markerColors,
@@ -2730,15 +2958,28 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                               color: Color(
                                 widget.controller.editorPaperColorValue,
                               ),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outlineVariant,
-                              ),
+                              borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: Theme.of(context).brightness == Brightness.dark ? 0.35 : 0.06,
+                                  ),
+                                  blurRadius: 24,
+                                  spreadRadius: 0,
+                                  offset: const Offset(0, 8),
+                                ),
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: Theme.of(context).brightness == Brightness.dark ? 0.20 : 0.03,
+                                  ),
+                                  blurRadius: 8,
+                                  spreadRadius: -2,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
                             child: Padding(
-                              padding: const EdgeInsets.all(22),
+                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
                               child: quill.QuillEditor.basic(
                                 controller: quillController,
                                 config: quill.QuillEditorConfig(
@@ -2805,7 +3046,13 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   ? _SlidesWorkspace(
                       file: file,
                       isGenerating: _isGeneratingWorkspace,
-                      onGenerate: _generateSlides,
+                      onGenerate: () {
+                        if (widget.controller.selectedAiProviderNeedsApiKey) {
+                          _showAiConfigBottomSheet(_generateSlides);
+                        } else {
+                          _generateSlides();
+                        }
+                      },
                       onChanged: (json) => widget.controller.updateSelectedFile(
                         slidesJson: json,
                       ),
@@ -2813,14 +3060,17 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     )
                   : _surface == EditorSurface.flashcards
                   ? _FlashcardWorkspace(
-                      hasApiKey: widget.controller.hasApiKey,
-                      apiKey: widget.controller.apiKey,
                       cards: _flashcardsFromFile(file),
                       index: _flashcardIndex,
                       showAnswer: _showFlashAnswer,
                       isGenerating: _isGeneratingWorkspace,
-                      onApiKeyChanged: widget.controller.setApiKey,
-                      onGenerate: _generateFlashcards,
+                      onGenerate: () {
+                        if (widget.controller.selectedAiProviderNeedsApiKey) {
+                          _showAiConfigBottomSheet(_generateFlashcards);
+                        } else {
+                          _generateFlashcards();
+                        }
+                      },
                       onChanged: (json) => widget.controller.updateSelectedFile(
                         flashcardsJson: json,
                       ),
@@ -2840,6 +3090,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
 class _NoteActionBar extends StatelessWidget {
   const _NoteActionBar({
+    required this.showAdvancedTools,
     required this.controller,
     required this.searchController,
     required this.markerColors,
@@ -2873,6 +3124,7 @@ class _NoteActionBar extends StatelessWidget {
     required this.onNextSearch,
   });
 
+  final bool showAdvancedTools;
   final quill.QuillController controller;
   final TextEditingController searchController;
   final List<Color> markerColors;
@@ -2909,147 +3161,172 @@ class _NoteActionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.58),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    SegmentedButton<int>(
-                      style: SegmentedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      segments: [
-                        const ButtonSegment(value: 1, label: Text('H1')),
-                        const ButtonSegment(value: 2, label: Text('H2')),
-                        ButtonSegment(value: 0, label: Text(context.t('Body'))),
-                      ],
-                      selected: const <int>{},
-                      emptySelectionAllowed: true,
-                      onSelectionChanged: (value) {
-                        if (value.isEmpty) {
-                          return;
-                        }
-                        final picked = value.first;
-                        onHeadingSelected(picked == 0 ? null : picked);
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    _MarkerPickerButton(
-                      colors: markerColors,
-                      activeColor: activeMarkerColor,
-                      onPick: onMarkerColorSelected,
-                    ),
-                    const SizedBox(width: 4),
-                    _GlassIconButton(
-                      tooltip: context.t('Apply marker'),
-                      onPressed: () => onHighlight(activeMarkerColor),
-                      icon: Icons.draw_rounded,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    IconButton(
-                      tooltip: context.t('Clear marker'),
-                      onPressed: onClearHighlight,
-                      icon: const Icon(Icons.format_color_reset_rounded),
-                    ),
-                    const SizedBox(width: 8),
-                    _FontStepButton(
-                      tooltip: context.t('Smaller text'),
-                      label: 'A-',
-                      onPressed: onDecreaseFontSize,
-                    ),
-                    _FontSizePicker(
-                      value: activeFontSize,
-                      onSelected: onFontSizeSelected,
-                    ),
-                    _FontStepButton(
-                      tooltip: context.t('Bigger text'),
-                      label: 'A+',
-                      onPressed: onIncreaseFontSize,
-                    ),
-                    const SizedBox(width: 8),
-                    _GlassIconButton(
-                      tooltip: context.t('Insert picture'),
-                      onPressed: onInsertImage,
-                      icon: Icons.image_outlined,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    _GlassIconButton(
-                      tooltip: context.t('Insert video'),
-                      onPressed: onInsertVideo,
-                      icon: Icons.video_file_outlined,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    _GlassIconButton(
-                      tooltip: context.t('Draw'),
-                      onPressed: onInsertDrawing,
-                      icon: Icons.gesture_rounded,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    _GlassIconButton(
-                      tooltip: context.t('Insert link'),
-                      onPressed: onInsertLink,
-                      icon: Icons.link_rounded,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    _GlassIconButton(
-                      tooltip: context.t('Record voice'),
-                      onPressed: onRecordVoice,
-                      icon: Icons.mic_rounded,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    _GlassIconButton(
-                      tooltip: context.t(
-                        'Import txt, markdown, json, or leccy',
-                      ),
-                      onPressed: onImportFile,
-                      icon: Icons.upload_file_rounded,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    _GlassIconButton(
-                      tooltip: context.t('Export lecture'),
-                      onPressed: onExportFile,
-                      icon: Icons.download_rounded,
-                      size: 36,
-                      iconSize: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton.tonalIcon(
-                      onPressed: isRestructuring ? null : onRestructure,
-                      icon: const Icon(Icons.account_tree_rounded, size: 18),
-                      label: Text(
-                        isRestructuring
-                            ? context.t('Structuring')
-                            : context.t('Restructure'),
-                      ),
-                    ),
-                    if (onRestoreRestructure != null) ...[
-                      const SizedBox(width: 4),
-                      TextButton.icon(
-                        onPressed: onRestoreRestructure,
-                        icon: const Icon(Icons.restore_rounded, size: 18),
-                        label: Text(context.t('Restore original')),
-                      ),
-                    ],
-                    const SizedBox(width: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: Theme.of(context).brightness == Brightness.dark
+                    ? const [Color(0x1EFFFFFF), Color(0x0AFFFFFF)]
+                    : const [Color(0xF0FFFFFF), Color(0xA8FFFFFF)],
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0x22FFFFFF)
+                    : const Color(0x55FFFFFF),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: Theme.of(context).brightness == Brightness.dark ? 0.30 : 0.05,
+                  ),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Column(
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        SegmentedButton<int>(
+                          style: SegmentedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          segments: [
+                            const ButtonSegment(value: 1, label: Text('H1')),
+                            const ButtonSegment(value: 2, label: Text('H2')),
+                            ButtonSegment(value: 0, label: Text(context.t('Body'))),
+                          ],
+                          selected: const <int>{},
+                          emptySelectionAllowed: true,
+                          onSelectionChanged: (value) {
+                            if (value.isEmpty) {
+                              return;
+                            }
+                            final picked = value.first;
+                            onHeadingSelected(picked == 0 ? null : picked);
+                          },
+                        ),
+                        const SizedBox(width: 10),
+                        _MarkerPickerButton(
+                          colors: markerColors,
+                          activeColor: activeMarkerColor,
+                          onPick: onMarkerColorSelected,
+                        ),
+                        const SizedBox(width: 4),
+                        _GlassIconButton(
+                          tooltip: context.t('Apply marker'),
+                          onPressed: () => onHighlight(activeMarkerColor),
+                          icon: Icons.draw_rounded,
+                          size: 36,
+                          iconSize: 18,
+                        ),
+                        IconButton(
+                          tooltip: context.t('Clear marker'),
+                          onPressed: onClearHighlight,
+                          icon: const Icon(Icons.format_color_reset_rounded),
+                        ),
+                        const SizedBox(width: 8),
+                        _FontStepButton(
+                          tooltip: context.t('Smaller text'),
+                          label: 'A-',
+                          onPressed: onDecreaseFontSize,
+                        ),
+                        _FontSizePicker(
+                          value: activeFontSize,
+                          onSelected: onFontSizeSelected,
+                        ),
+                        _FontStepButton(
+                          tooltip: context.t('Bigger text'),
+                          label: 'A+',
+                          onPressed: onIncreaseFontSize,
+                        ),
+                        const SizedBox(width: 8),
+                        _GlassIconButton(
+                          tooltip: context.t('Insert picture'),
+                          onPressed: onInsertImage,
+                          icon: Icons.image_outlined,
+                          size: 36,
+                          iconSize: 18,
+                        ),
+                        if (showAdvancedTools) ...[
+                          _GlassIconButton(
+                            tooltip: context.t('Insert video'),
+                            onPressed: onInsertVideo,
+                            icon: Icons.video_file_outlined,
+                            size: 36,
+                            iconSize: 18,
+                          ),
+                          _GlassIconButton(
+                            tooltip: context.t('Draw'),
+                            onPressed: onInsertDrawing,
+                            icon: Icons.gesture_rounded,
+                            size: 36,
+                            iconSize: 18,
+                          ),
+                        ],
+                        _GlassIconButton(
+                          tooltip: context.t('Insert link'),
+                          onPressed: onInsertLink,
+                          icon: Icons.link_rounded,
+                          size: 36,
+                          iconSize: 18,
+                        ),
+                        if (showAdvancedTools) ...[
+                          _GlassIconButton(
+                            tooltip: context.t('Record voice'),
+                            onPressed: onRecordVoice,
+                            icon: Icons.mic_rounded,
+                            size: 36,
+                            iconSize: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          _GlassIconButton(
+                            tooltip: context.t(
+                              'Import txt, markdown, json, or leccy',
+                            ),
+                            onPressed: onImportFile,
+                            icon: Icons.upload_file_rounded,
+                            size: 36,
+                            iconSize: 18,
+                          ),
+                          _GlassIconButton(
+                            tooltip: context.t('Export lecture'),
+                            onPressed: onExportFile,
+                            icon: Icons.download_rounded,
+                            size: 36,
+                            iconSize: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.tonalIcon(
+                            onPressed: isRestructuring ? null : onRestructure,
+                            icon: const Icon(Icons.account_tree_rounded, size: 18),
+                            label: Text(
+                              isRestructuring
+                                  ? context.t('Structuring')
+                                  : context.t('Restructure'),
+                            ),
+                          ),
+                          if (onRestoreRestructure != null) ...[
+                            const SizedBox(width: 4),
+                            TextButton.icon(
+                              onPressed: onRestoreRestructure,
+                              icon: const Icon(Icons.restore_rounded, size: 18),
+                              label: Text(context.t('Restore original')),
+                            ),
+                          ],
+                        ],
+                        const SizedBox(width: 8),
                     _GlassIconButton(
                       tooltip: showOutline
                           ? context.t('Hide note accordion')
@@ -3115,7 +3392,9 @@ class _NoteActionBar extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 }
 
@@ -4599,15 +4878,15 @@ class _SlidesWorkspace extends StatelessWidget {
       children: [
         Row(
           children: [
-            FilledButton.icon(
-              onPressed: isGenerating ? null : onGenerate,
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: Text(
-                isGenerating
-                    ? context.t('Generating')
-                    : context.t('Generate with Gemini'),
-              ),
-            ),
+                  FilledButton.icon(
+                    onPressed: isGenerating ? null : onGenerate,
+                    icon: const Icon(Icons.auto_awesome_rounded),
+                    label: Text(
+                      isGenerating
+                          ? context.t('Generating')
+                          : context.t('Generate with AI'),
+                    ),
+                  ),
             const SizedBox(width: 8),
             OutlinedButton.icon(
               onPressed: onExport,
@@ -4685,13 +4964,10 @@ class _SlidesWorkspace extends StatelessWidget {
 
 class _FlashcardWorkspace extends StatelessWidget {
   const _FlashcardWorkspace({
-    required this.hasApiKey,
-    required this.apiKey,
     required this.cards,
     required this.index,
     required this.showAnswer,
     required this.isGenerating,
-    required this.onApiKeyChanged,
     required this.onGenerate,
     required this.onChanged,
     required this.onToggleAnswer,
@@ -4699,13 +4975,10 @@ class _FlashcardWorkspace extends StatelessWidget {
     required this.onNext,
   });
 
-  final bool hasApiKey;
-  final String apiKey;
   final List<GeneratedFlashcard> cards;
   final int index;
   final bool showAnswer;
   final bool isGenerating;
-  final ValueChanged<String> onApiKeyChanged;
   final VoidCallback onGenerate;
   final ValueChanged<String> onChanged;
   final VoidCallback onToggleAnswer;
@@ -4739,41 +5012,7 @@ class _FlashcardWorkspace extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            if (!hasApiKey) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  context.t(
-                    'Flashcards are locked. Enter API key to enable this tab.',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                initialValue: apiKey,
-                obscureText: true,
-                onChanged: onApiKeyChanged,
-                decoration: InputDecoration(
-                  labelText: context.t('API key'),
-                  prefixIcon: const Icon(Icons.key_rounded),
-                ),
-              ),
-              const Spacer(),
-            ] else ...[
-              TextFormField(
-                initialValue: apiKey,
-                obscureText: true,
-                onChanged: onApiKeyChanged,
-                decoration: InputDecoration(
-                  labelText: context.t('API key'),
-                  prefixIcon: const Icon(Icons.key_rounded),
-                ),
-              ),
+            ...[
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -5896,7 +6135,7 @@ class _GlassIconButton extends StatelessWidget {
       message: tooltip,
       child: _LiquidGlass(
         selected: selected,
-        borderRadius: size / 2,
+        borderRadius: 12,
         padding: EdgeInsets.zero,
         blur: 12,
         child: SizedBox(
@@ -6567,24 +6806,69 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                     ],
                   ),
                   ExpansionTile(
-                    leading: const Icon(Icons.key_rounded),
-                    title: Text(context.t('API key')),
+                    leading: const Icon(Icons.auto_awesome_rounded),
+                    title: Text(context.t('AI Settings')),
                     subtitle: Text(
-                      controller.hasApiKey
-                          ? context.t('Saved in this session')
-                          : context.t('Not set'),
+                      '${controller.aiProviderDisplayName()} - ${controller.resolvedAiModel()}',
                     ),
                     children: [
                       Padding(
                         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                        child: TextFormField(
-                          initialValue: controller.apiKey,
-                          obscureText: true,
-                          onChanged: controller.setApiKey,
-                          decoration: InputDecoration(
-                            labelText: context.t('Enter API key'),
-                            prefixIcon: const Icon(Icons.vpn_key_outlined),
-                          ),
+                        child: Column(
+                          children: [
+                            DropdownButtonFormField<String>(
+                              value: controller.aiProvider,
+                              decoration: InputDecoration(
+                                labelText: context.t('AI Provider'),
+                                prefixIcon: const Icon(Icons.hub_outlined),
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 'gemini', child: Text('Google Gemini')),
+                                DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                                DropdownMenuItem(value: 'anthropic', child: Text('Anthropic Claude')),
+                                DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek')),
+                                DropdownMenuItem(value: 'ollama_custom', child: Text('Ollama / Custom (OpenAI-compatible)')),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  controller.setAiProvider(value);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              initialValue: controller.aiModel,
+                              onChanged: controller.setAiModel,
+                              decoration: InputDecoration(
+                                labelText: context.t('Model ID'),
+                                hintText: controller.defaultModelForProvider(),
+                                prefixIcon: const Icon(Icons.memory_rounded),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              initialValue: controller.aiBaseUrl,
+                              onChanged: controller.setAiBaseUrl,
+                              decoration: InputDecoration(
+                                labelText: context.t('Base URL (optional override)'),
+                                hintText: controller.defaultBaseUrlForProvider(),
+                                prefixIcon: const Icon(Icons.link_rounded),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              initialValue: controller.apiKey,
+                              obscureText: true,
+                              onChanged: controller.setApiKey,
+                              decoration: InputDecoration(
+                                labelText: context.t('API Key / Token'),
+                                helperText: controller.selectedAiProviderRequiresApiKey
+                                    ? context.t('Required for this provider')
+                                    : context.t('Optional for local/custom providers'),
+                                prefixIcon: const Icon(Icons.vpn_key_outlined),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -6623,6 +6907,33 @@ void _showSettingsSheet(BuildContext context, AppController controller) {
                                 icon: const Icon(Icons.download_rounded),
                                 label: Text(context.t('Import backup')),
                               ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  ExpansionTile(
+                    leading: const Icon(Icons.tune_rounded),
+                    title: Text(context.t('Advanced Options')),
+                    subtitle: Text(
+                      controller.showAdvancedTools
+                          ? context.t('Show all formatting & power-user features')
+                          : context.t('Minimal and clean mode'),
+                    ),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.build_outlined, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(context.t('Show Advanced Editing Tools')),
+                            ),
+                            Switch(
+                              value: controller.showAdvancedTools,
+                              onChanged: controller.setShowAdvancedTools,
                             ),
                           ],
                         ),
