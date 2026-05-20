@@ -143,19 +143,28 @@ class AppController extends ChangeNotifier {
       isLoading = true;
       errorMessage = null;
       notifyListeners();
-      _repository ??= await openLeccyStore();
-      await _loadSettings();
-      await _loadFolders();
+      await _loadWithTimeout();
       if (folders.isNotEmpty) {
         selectedFolderId ??= folders.first.id;
         await _loadFolderContent(selectedFolderId!);
       }
+    } on TimeoutException {
+      errorMessage =
+          'Loading timed out in browser. Please refresh, or use web-server mode.';
     } catch (error) {
       errorMessage = error.toString();
     } finally {
       isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _loadWithTimeout() async {
+    await Future<void>(() async {
+      _repository ??= await openLeccyStore();
+      await _loadSettings();
+      await _loadFolders();
+    }).timeout(const Duration(seconds: 12));
   }
 
   Future<void> _loadFolders() async {

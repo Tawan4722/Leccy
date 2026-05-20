@@ -350,8 +350,19 @@ class LeccyHomePage extends ConsumerWidget {
       return Scaffold(
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Text(app.errorMessage!, textAlign: TextAlign.center),
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(app.errorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: app.load,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(context.t('Retry')),
+                ),
+              ],
+            ),
           ),
         ),
       );
