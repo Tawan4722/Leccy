@@ -77,4 +77,42 @@ void main() {
       throwsA(isA<FormatException>()),
     );
   });
+
+  test('decodes v1 backup safely without cover_images and auto_summary_enabled', () {
+    final v1Json = {
+      'format': 'leccy-backup',
+      'version': 1,
+      'exported_at': 1716000000000,
+      'folders': [
+        {
+          'id': 1,
+          'name': 'Physics',
+          'color_value': 4279383134,
+          'badge': 'PH',
+          'sort_order': 1
+        }
+      ],
+      'files': [
+        {
+          'id': 1,
+          'folder_id': 1,
+          'title': 'Vectors',
+          'description': '',
+          'content_json': '[{"insert":"\\n"}]',
+          'quick_note': '',
+          'progress_percent': 0,
+          'updated_at': 1716000000000
+        }
+      ],
+      'study_sets': <Object?>[],
+      'study_set_items': <Object?>[]
+    };
+
+    final parsed = LeccyBackupBundle.fromJson(v1Json);
+
+    expect(parsed.version, 1);
+    expect(parsed.folders.single.name, 'Physics');
+    expect(parsed.files.single.autoSummaryEnabled, isFalse);
+    expect(parsed.coverImages, isEmpty);
+  });
 }

@@ -391,4 +391,71 @@ void main() {
     expect(afterBackspace.any((range) => range.headingLevel == 1), isTrue);
     await drainAutosave(tester);
   });
+
+  testWidgets('spreadsheet resolves transitive formulas and maintains focus', (tester) async {
+    final (controller, _) = await pumpNoteEditor(
+      tester,
+      contentJson: LectureFile.emptyDocumentJson(),
+    );
+
+    // Switch to Sheet tab
+    await tester.tap(find.byIcon(Icons.table_chart_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mini sheet'), findsOneWidget);
+
+    // Enter values:
+    // Row 1, Col A (index 0) = "10"
+    // Row 2, Col B (index 4) = "=A1+5"
+    // Row 3, Col B (index 7) = "=B2+5"
+    await tester.enterText(find.byType(TextFormField).at(0), '10');
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(4), '=A1+5');
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(7), '=B2+5');
+    await tester.pumpAndSettle();
+
+    final element = tester.element(
+      find.byElementPredicate(
+        (el) => el.widget.runtimeType.toString() == '_SheetGraphWorkspace',
+      ),
+    );
+    final dynamic state = (element as StatefulElement).state;
+
+    // Verify row values
+    expect(state.rows[0][0], '10');
+    expect(state.rows[1][1], '=A1+5');
+    expect(state.rows[2][1], '=B2+5');
+
+    // Verify evaluation by inspecting the CustomPaint painter's points:
+    // B2 (points[1]) = 10 + 5 = 15
+    // B3 (points[2]) = B2 + 5 = 20
+    final customPaint = tester.widget<CustomPaint>(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter.runtimeType.toString() == '_GraphPainter',
+      ),
+    );
+    final dynamic painter = customPaint.painter;
+    final List<dynamic> points = painter.points;
+
+    expect(points[0].label, 'Row 2');
+    expect(points[0].value, 15.0);
+    expect(points[1].label, 'Row 3');
+    expect(points[1].value, 20.0);
+
+    // Verify circular reference prevention does not stack overflow
+    await tester.enterText(find.byType(TextFormField).at(0), '=B2');
+    await tester.pumpAndSettle();
+
+    final customPaint2 = tester.widget<CustomPaint>(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter.runtimeType.toString() == '_GraphPainter',
+      ),
+    );
+    final dynamic painter2 = customPaint2.painter;
+    final List<dynamic> points2 = painter2.points;
+    expect(points2[0].value, 10.0); // Circular resolves to 10.0 without crash
+  });
 }

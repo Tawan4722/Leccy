@@ -426,9 +426,11 @@ class GeneratedSlide {
   final String notes;
 
   factory GeneratedSlide.fromJson(Map<String, Object?> json) {
+    final bulletsRaw = json['bullets'];
+    final bulletsList = bulletsRaw is List ? bulletsRaw : const [];
     return GeneratedSlide(
       title: json['title']?.toString() ?? '',
-      bullets: (json['bullets'] as List? ?? const [])
+      bullets: bulletsList
           .map((item) => item.toString())
           .where((item) => item.trim().isNotEmpty)
           .toList(),
@@ -507,10 +509,12 @@ class StructuredSection {
   final List<StructuredSection> subsections;
 
   factory StructuredSection.fromJson(Map<String, Object?> json) {
+    final subsectionsRaw = json['subsections'];
+    final subsectionsList = subsectionsRaw is List ? subsectionsRaw : const [];
     return StructuredSection(
       heading: json['heading']?.toString() ?? '',
       body: _stringList(json['body']),
-      subsections: (json['subsections'] as List? ?? const [])
+      subsections: subsectionsList
           .whereType<Map>()
           .map(
             (item) => StructuredSection.fromJson(item.cast<String, Object?>()),

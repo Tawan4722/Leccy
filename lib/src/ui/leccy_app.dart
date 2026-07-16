@@ -3048,6 +3048,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     )
                   : _surface == EditorSurface.sheet
                   ? _SheetGraphWorkspace(
+                      key: ValueKey(file.id),
                       file: file,
                       fastMode: widget.controller.fastMode,
                       onChanged: (json) =>
@@ -3055,6 +3056,7 @@ class _NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     )
                   : _surface == EditorSurface.slides
                   ? _SlidesWorkspace(
+                      key: ValueKey(file.id),
                       file: file,
                       isGenerating: _isGeneratingWorkspace,
                       onGenerate: () {
@@ -4588,6 +4590,7 @@ class _MindMapCard extends StatelessWidget {
 
 class _SheetGraphWorkspace extends StatefulWidget {
   const _SheetGraphWorkspace({
+    super.key,
     required this.file,
     required this.fastMode,
     required this.onChanged,
@@ -4662,7 +4665,7 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
     );
   }
 
-  double _valueFor(String raw) {
+  double _valueFor(String raw, [Set<int>? visited]) {
     final value = raw.trim();
     if (!value.startsWith('=')) {
       return double.tryParse(value) ?? 0;
@@ -4670,12 +4673,12 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
     final expression = value.substring(1);
     final parts = expression.split('+');
     if (parts.length > 1) {
-      return parts.fold<double>(0, (sum, part) => sum + _cellValue(part));
+      return parts.fold<double>(0, (sum, part) => sum + _cellValue(part, visited));
     }
-    return _cellValue(expression);
+    return _cellValue(expression, visited);
   }
 
-  double _cellValue(String ref) {
+  double _cellValue(String ref, [Set<int>? visited]) {
     final clean = ref.trim().toUpperCase();
     if (clean.length < 2) {
       return double.tryParse(clean) ?? 0;
@@ -4689,7 +4692,12 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
         column >= rows[row - 1].length) {
       return double.tryParse(clean) ?? 0;
     }
-    return double.tryParse(rows[row - 1][column]) ?? 0;
+    final cellKey = (row - 1) * 1000 + column;
+    final visitedSet = visited ?? <int>{};
+    if (visitedSet.contains(cellKey)) {
+      return 0;
+    }
+    return _valueFor(rows[row - 1][column], {...visitedSet, cellKey});
   }
 
   @override
@@ -4750,7 +4758,7 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
                                   padding: const EdgeInsets.all(4),
                                   child: TextFormField(
                                     key: ValueKey(
-                                      '$rowIndex-$col-${rows[rowIndex][col]}',
+                                      '$rowIndex-$col',
                                     ),
                                     initialValue: rows[rowIndex][col],
                                     decoration: InputDecoration(
@@ -4847,6 +4855,7 @@ class _SheetGraphWorkspaceState extends State<_SheetGraphWorkspace> {
 
 class _SlidesWorkspace extends StatelessWidget {
   const _SlidesWorkspace({
+    super.key,
     required this.file,
     required this.isGenerating,
     required this.onGenerate,

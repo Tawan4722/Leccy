@@ -57,19 +57,19 @@ class LeccyBackupBundle {
         _asInt(json['exported_at']),
       ),
       folders: _asList(
-        json['folders'],
+        json['folders'] ?? const [],
       ).map((item) => _decodeFolder(_asMap(item))).toList(),
       files: _asList(
-        json['files'],
+        json['files'] ?? const [],
       ).map((item) => _decodeFile(_asMap(item))).toList(),
       studySets: _asList(
-        json['study_sets'],
+        json['study_sets'] ?? const [],
       ).map((item) => _decodeStudySet(_asMap(item))).toList(),
       studySetItems: _asList(
-        json['study_set_items'],
+        json['study_set_items'] ?? const [],
       ).map((item) => _decodeStudySetItem(_asMap(item))).toList(),
       coverImages: _asList(
-        json['cover_images'],
+        json['cover_images'] ?? const [],
       ).map((item) => LeccyBackupCoverImage.fromJson(_asMap(item))).toList(),
       checksumSha256: json['checksum_sha256']?.toString(),
     );
@@ -107,7 +107,7 @@ class LeccyBackupBundle {
           LectureFile.emptyFlashcardsJson(),
       progressPercent: _asInt(map['progress_percent']),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(_asInt(map['updated_at'])),
-      autoSummaryEnabled: _asInt(map['auto_summary_enabled']) == 1,
+      autoSummaryEnabled: _asIntOrDefault(map['auto_summary_enabled'], 0) == 1,
       isImportant: _asIntOrDefault(map['important_flag'], 0) == 1,
       deletedAt: _toDateTime(map['deleted_at']),
       summarySourceHash: map['summary_source_hash']?.toString(),
